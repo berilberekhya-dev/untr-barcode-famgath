@@ -1,0 +1,14 @@
+'use client';
+import { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
+import type { DisplayState } from '@/lib/types';
+import { Astronaut, Planet, SpaceBackdrop } from './art';
+import { Brand, Connection, DemoBanner, ErrorBox, formatDate, FullscreenButton, usePoll } from './shared';
+import { Icon } from './icon';
+export function QRScreen() {
+  const { data, error } = usePoll<DisplayState>('/api/display?view=registration'); const [qr, setQr] = useState(''); const [qrError, setQrError] = useState('');
+  const url = data?.registrationUrl;
+  useEffect(() => { if (url) QRCode.toDataURL(url, { width: 600, margin: 4, errorCorrectionLevel: 'M', color: { dark: '#070B22', light: '#FFFFFF' } }).then(setQr).catch(() => setQrError('QR belum dapat dibuat. Gunakan alamat di bawah.')); }, [url]);
+  const localOnly = Boolean(url && ['localhost', '127.0.0.1', '0.0.0.0'].includes(new URL(url).hostname));
+  return <div className="public-page qr-page"><SpaceBackdrop /><DemoBanner demo={data?.event.demo} /><header className="public-header stage-header"><Brand /><div><Connection error={error} /><FullscreenButton /></div></header><main className="qr-layout"><section className="qr-story"><p className="eyebrow"><span className="tiny-square" />SELAMAT DATANG, KELUARGA BESAR UT</p><h1>Terbang Melesat,<br /><span>Lanjakke Nian</span></h1><p className="intro">Scan QR dengan kamera HP Anda.<br />Daftarkan diri dan keluarga, lalu nikmati acaranya!</p><div className="qr-steps"><span><b>1</b>Scan QR</span><Icon name="arrow" size={18} /><span><b>2</b>Isi data</span><Icon name="arrow" size={18} /><span><b>3</b>Siap berangkat!</span></div><div className="qr-scene"><Planet /><Astronaut /></div><div className="event-meta"><span><Icon name="calendar" size={17} />{formatDate(data?.event.date || '')}</span><span><Icon name="pin" size={17} />{data?.event.venue || 'Palembang'}</span></div></section><section className="qr-panel pixel-panel"><div className="panel-topline"><span className="eyebrow">SCAN UNTUK REGISTRASI</span><Icon name="qr" size={21} /></div><div className="qr-white">{qr ? <img src={qr} alt={`QR registrasi: ${url}`} width={600} height={600} /> : <span className="loader" />}</div><h2>Satu scan. Langsung daftar.</h2><a href={url || '/daftar'} className="qr-url">{url || 'Menghubungkan…'}<Icon name="external" size={15} /></a>{(error || qrError) && <ErrorBox>{qrError || 'Mencoba terhubung kembali ke server.'}</ErrorBox>}{localOnly && <p className="local-hint"><Icon name="info" size={16} />Pengujian HP: ubah APP_BASE_URL ke IP LAN laptop di .env.local, lalu restart server.</p>}{data && !data.event.registrationOpen && <ErrorBox>Registrasi sedang ditutup.</ErrorBox>}</section></main><footer className="public-footer"><span>UNITED TRACTORS <b>✦</b> PALEMBANG</span><span>Terbang melesat, Lanjakke nian</span><span>FAMILY GATHERING</span></footer></div>;
+}

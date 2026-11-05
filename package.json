@@ -1,0 +1,52 @@
+{
+  "name": "ut-space-gathering",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "setup:local": "tsx scripts/setup-local.ts",
+    "dev": "next dev --webpack",
+    "dev:lan": "next dev --webpack --hostname 0.0.0.0",
+    "build": "next build --webpack",
+    "start": "next start",
+    "start:lan": "next start --hostname 0.0.0.0",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:import": "tsx scripts/import-roster.ts",
+    "db:demo": "tsx scripts/demo.ts",
+    "demo": "tsx scripts/demo.ts --start",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "test:postgres": "tsx scripts/test-postgres.ts",
+    "db:transfer": "tsx scripts/migrate-sqlite-to-postgres.ts",
+    "db:verify:supabase": "tsx scripts/verify-supabase.ts"
+  },
+  "dependencies": {
+    "@fontsource/pixelify-sans": "^5.3.0",
+    "@fontsource/source-sans-3": "^5.3.1",
+    "@libsql/client": "^0.18.0",
+    "drizzle-orm": "^0.45.4",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
+    "next": "^16.4.2",
+    "pg": "^8.23.1",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "embedded-postgres": "^18.6.0-beta.19",
+    "jsqr": "^1.4.0",
+    "tailwindcss": "^4.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.5"
+  }
+}

@@ -1,0 +1,5 @@
+[
+  { "nrp": "000001", "fullName": "Penjelajah Contoh Satu", "company": "UT", "plannedSize": 3, "source": "excel", "drawEnabled": true, "tableNumber": "1" },
+  { "nrp": "000002", "fullName": "Penjelajah Contoh Dua", "company": "UT", "plannedSize": 2, "source": "excel", "drawEnabled": true, "tableNumber": "2" },
+  { "nrp": "99000001", "fullName": "Peserta Sekolah Contoh", "company": "UTS", "plannedSize": 1, "source": "uts", "drawEnabled": false, "tableNumber": "3" }
+]

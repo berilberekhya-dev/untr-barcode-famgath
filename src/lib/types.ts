@@ -1,0 +1,12 @@
+export type EventSettings = { id: number; title: string; date: string; venue: string; targetWinners: number; registrationOpen: boolean; demo: boolean };
+export type RosterEntry = { id: string; nrp: string; fullName: string; company: string; plannedSize: number; source: 'excel' | 'uts'; drawEnabled: boolean; attendanceNote: string; tableNumber: string | null };
+export type Registration = { id: string; nrp: string; fullName: string; partySize: number; createdAt: number; plannedSize: number; company: string; acknowledgedExtra: boolean; extraCoupons: number; transferredOut: number; couponCount: number; seatCount: number; tableNumber: string | null };
+export type DrawStatus = 'confirmed' | 'forfeited';
+export type Draw = { id: string; rosterId: string; sessionId: string; requestKey: string; position: number; slot: number; nrp: string; fullName: string; status: DrawStatus; createdAt: number; revealAt: number; receivedAt: number | null; reelNames: string[]; reelIndex: number };
+export type PrizeSession = { id: string; prizeName: string; prizeImage: string; size: number; baseSlot: number; createdAt: number };
+export type DrawResult = { session: PrizeSession; draws: Draw[] };
+export type AdminState = { serverTime: number; event: EventSettings; registrations: Registration[]; roster: RosterEntry[]; sessions: PrizeSession[]; draws: Draw[]; registrationUrl: string; showWinners: boolean;
+  stats: { employees: number; people: number; eligible: number; confirmed: number; received: number; plannedPeople: number; surplus: number; shortage: number; couponCount: number } };
+export type PublicDraw = Omit<Draw, 'nrp' | 'rosterId' | 'requestKey'> & {prizeName?:string};
+export type DisplayState = { event: EventSettings; registrationUrl: string; serverTime: number; names: string[]; draws: PublicDraw[]; active: PublicDraw | null; currentDraw: PublicDraw | null;
+  currentSession: PrizeSession | null; currentDraws: PublicDraw[]; confirmedCount: number; eligibleCount: number; showWinners:boolean };
