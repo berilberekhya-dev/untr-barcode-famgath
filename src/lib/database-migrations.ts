@@ -56,4 +56,5 @@ export const sqliteMigration = [
   `INSERT OR IGNORE INTO display_controls(id,show_winners) VALUES(1,0)`,
   `CREATE TABLE IF NOT EXISTS roster_seating (nrp TEXT PRIMARY KEY REFERENCES attendance_roster(nrp), table_number TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS registration_seating (registration_id TEXT PRIMARY KEY REFERENCES registrations(id), table_number TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS draw_only_roster (nrp TEXT PRIMARY KEY REFERENCES attendance_roster(nrp))`,
 ];

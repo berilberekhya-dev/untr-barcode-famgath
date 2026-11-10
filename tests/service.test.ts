@@ -23,6 +23,23 @@ beforeEach(async()=>{
  db=createDatabase(url);clock=Date.now();s=new GatheringService(db,()=>clock);await s.importRoster([...Array.from({length:50},(_,i)=>entry(i+1)),{...entry(99),source:'uts',drawEnabled:false,plannedSize:1,company:'UTS'}]);
 });
 afterEach(async()=>{await db?.client.close();});
+it('peserta khusus undian baru bisa check-in setelah impor daftar hadir resmi', async () => {
+  const person = { ...entry(500), tableNumber: undefined };
+  await s.importRoster([person]);
+  await db.client.execute({ sql: 'INSERT INTO draw_only_roster(nrp) VALUES(?)', args: [person.nrp] });
+  await db.client.execute({ sql: 'UPDATE attendance_roster SET draw_enabled=0 WHERE nrp<>?', args: [person.nrp] });
+
+  const state = await s.state(endpoint);
+  expect(state.stats.eligible).toBe(1);
+  expect(state.roster.find(row => row.nrp === person.nrp)?.plannedSize).toBe(0);
+  expect(state.stats.plannedPeople).toBe(151);
+  await expect(s.lookup({ nrp: person.nrp })).rejects.toMatchObject({ status: 404 });
+  await expect(s.register(payload(500))).rejects.toMatchObject({ status: 404 });
+  expect((await s.draw({ requestKey: randomUUID() })).draws[0].nrp).toBe(person.nrp);
+
+  await s.importRoster([{ ...person, tableNumber: '18' }], true);
+  expect(await s.register(payload(500))).toMatchObject({ nrp: person.nrp, tableNumber: '18' });
+});
 it('daftar awal tidak membuat check-in; UTS tidak ikut undian',async()=>{const a=await s.state(endpoint);expect(a.roster).toHaveLength(51);expect(a.registrations).toHaveLength(0);expect(a.stats.eligible).toBe(50);expect(a.stats.people).toBe(0);});
 it('lookup cocok tepat dengan NRP, angka dan nol depan',async()=>{const found=await s.lookup({nrp:'000001'});expect(found.company).toBe('UT');expect(found).not.toHaveProperty('plannedSize');await expect(s.lookup({nrp:'1'})).rejects.toMatchObject({status:404});for(const nrp of ['001a','+123','1e3','12 3'])await expect(s.register({...payload(),nrp})).rejects.toThrow();});
 it('NRP tidak terdaftar ditolak untuk peserta maupun bantuan panitia',async()=>{for(const assisted of [false,true])await expect(s.register(payload(1000),assisted)).rejects.toMatchObject({status:404});});

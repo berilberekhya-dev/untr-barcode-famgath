@@ -13,10 +13,15 @@ export const eventSchema = z.object({ title: text(200), date: z.union([z.literal
 const rosterSchema = z.object({ nrp: nrpSchema, fullName: text(160), company: text(200), plannedSize: z.number().int().min(1).max(999), source: z.enum(['excel','uts']), drawEnabled: z.boolean(), tableNumber:z.string().trim().min(1).max(40).optional() });
 const drawSchema = z.object({ requestKey: z.string().uuid(), sessionId: z.string().uuid().optional(), count: z.number().int().min(1).max(5).default(1), prizeName: text(200).default('Door prize'), prizeImage: z.string().max(900000).default('') });
 type Row = Record<string, unknown>;
-const rosterRow = (r: Row): RosterEntry => ({ id:String(r.id), nrp:String(r.nrp), fullName:formatPersonName(String(r.full_name)), company:String(r.company), plannedSize:Number(r.planned_size), source:r.source as 'excel'|'uts', drawEnabled:Boolean(r.draw_enabled), attendanceNote:String(r.attendance_note), tableNumber:r.table_number==null?null:String(r.table_number) });
+const rosterRow = (r: Row): RosterEntry => ({ id:String(r.id), nrp:String(r.nrp), fullName:formatPersonName(String(r.full_name)), company:String(r.company), plannedSize:Number(r.checkin_planned_size), source:r.source as 'excel'|'uts', drawEnabled:Boolean(r.draw_enabled), attendanceNote:String(r.attendance_note), tableNumber:r.table_number==null?null:String(r.table_number) });
 const sessionRow = (r: Row): PrizeSession => ({ id:String(r.id), prizeName:String(r.prize_name), prizeImage:String(r.prize_image), size:Number(r.size), baseSlot:Number(r.base_slot), createdAt:Number(r.created_at) });
 const drawRow = (r: Row): Draw => ({ id:String(r.id), rosterId:String(r.roster_id), sessionId:String(r.session_id), requestKey:String(r.request_key), position:Number(r.position), slot:Number(r.slot), nrp:String(r.nrp), fullName:formatPersonName(String(r.full_name)), status:r.status as Draw['status'], createdAt:Number(r.created_at), revealAt:Number(r.reveal_at), receivedAt:r.received_at == null ? null : Number(r.received_at), reelNames:(JSON.parse(String(r.reel_names)) as string[]).map(formatPersonName), reelIndex:Number(r.reel_index) });
 const registrationSQL = `SELECT r.*,d.planned_size,d.company,d.acknowledged_extra,d.extra_coupons,COALESCE((SELECT table_number FROM registration_seating WHERE registration_id=r.id),(SELECT table_number FROM roster_seating WHERE nrp=r.nrp)) table_number,COALESCE((SELECT SUM(quantity) FROM coupon_transfers WHERE donor_id=r.id),0) transferred_out FROM registrations r JOIN registration_details d ON d.registration_id=r.id`;
+const checkInRosterSQL = 'SELECT * FROM attendance_roster WHERE nrp=? AND nrp NOT IN (SELECT nrp FROM draw_only_roster)';
+const adminRosterSQL = `SELECT a.*, s.table_number,
+  CASE WHEN d.nrp IS NOT NULL THEN 0 ELSE a.planned_size END AS checkin_planned_size
+  FROM attendance_roster a LEFT JOIN roster_seating s ON s.nrp=a.nrp
+  LEFT JOIN draw_only_roster d ON d.nrp=a.nrp ORDER BY full_name`;
 const registrationRow = (r: Row): Registration => ({ id:String(r.id), nrp:String(r.nrp), fullName:formatPersonName(String(r.full_name)), partySize:Number(r.party_size), createdAt:Number(r.created_at), plannedSize:Number(r.planned_size), company:String(r.company), acknowledgedExtra:Boolean(r.acknowledged_extra), extraCoupons:Number(r.extra_coupons), transferredOut:Number(r.transferred_out), couponCount:Math.min(Number(r.party_size),Number(r.planned_size))+Number(r.extra_coupons),seatCount:Math.min(Number(r.party_size),Number(r.planned_size)),tableNumber:r.table_number==null?null:String(r.table_number) });
 
 function validateImage(image: string) {
@@ -47,6 +52,7 @@ export class GatheringService {
         const existing=(await tx.execute({sql:'SELECT * FROM attendance_roster WHERE nrp=?',args:[entry.nrp]})).rows[0];
         if (existing && refreshOfficial) {
           await tx.execute({sql:'UPDATE attendance_roster SET full_name=?,company=?,planned_size=?,source=?,draw_enabled=CASE WHEN draw_enabled=0 THEN 0 ELSE ? END WHERE nrp=?',args:[entry.fullName,entry.company,entry.plannedSize,entry.source,Number(entry.drawEnabled),entry.nrp]});
+          await tx.execute({sql:'DELETE FROM draw_only_roster WHERE nrp=?',args:[entry.nrp]});
         }
         if(existing && entry.tableNumber) await tx.execute({sql:'INSERT INTO roster_seating(nrp,table_number) VALUES(?,?) ON CONFLICT(nrp) DO UPDATE SET table_number=excluded.table_number',args:[entry.nrp,entry.tableNumber]});
         if (existing) continue; // Keputusan panitia dan check-in tetap dipertahankan.
@@ -58,7 +64,7 @@ export class GatheringService {
   }
   async lookup(input: unknown) {
     const {nrp}=z.object({nrp:nrpSchema}).parse(input); await this.storage.ready();
-    const r=(await this.storage.client.execute({sql:'SELECT full_name,company,source,draw_enabled FROM attendance_roster WHERE nrp=?',args:[nrp]})).rows[0];
+    const r=(await this.storage.client.execute({sql:checkInRosterSQL,args:[nrp]})).rows[0];
     if (!r) throw new AppError('NRP tidak terdaftar pada daftar awal. Silakan hubungi panitia.',404);
     return {fullName:formatPersonName(String(r.full_name)),company:String(r.company),doorprizeEligible:r.source==='excel'&&Boolean(r.draw_enabled)};
   }
@@ -72,7 +78,7 @@ export class GatheringService {
       }
       const e=(await tx.execute('SELECT registration_open FROM events WHERE id=1')).rows[0];
       if (!e.registration_open&&!assisted) throw new AppError('Registrasi sedang ditutup. Silakan hubungi panitia.',403);
-      const roster=(await tx.execute({sql:'SELECT * FROM attendance_roster WHERE nrp=?',args:[data.nrp]})).rows[0];
+      const roster=(await tx.execute({sql:checkInRosterSQL,args:[data.nrp]})).rows[0];
       if (!roster) throw new AppError('NRP tidak terdaftar pada daftar awal. Silakan hubungi panitia.',404);
       if ((await tx.execute({sql:'SELECT id FROM registrations WHERE nrp=?',args:[data.nrp]})).rows.length) throw new AppError('NRP ini sudah check-in. Hubungi panitia untuk koreksi data.',409);
       const planned=Number(roster.planned_size);
@@ -206,7 +212,7 @@ export class GatheringService {
   async state(registrationUrl:string):Promise<AdminState> {
     await this.storage.ready(); const tx=await this.storage.client.transaction('read');
     try {
-      const [ev,regs,rs,ss,ds,controls]=await tx.batch(['SELECT * FROM events WHERE id=1',registrationSQL+' ORDER BY r.created_at DESC,r.id','SELECT a.*,s.table_number FROM attendance_roster a LEFT JOIN roster_seating s ON s.nrp=a.nrp ORDER BY full_name','SELECT * FROM prize_sessions ORDER BY created_at,id','SELECT * FROM prize_draws ORDER BY created_at,session_id,position,id','SELECT show_winners FROM display_controls WHERE id=1']);
+      const [ev,regs,rs,ss,ds,controls]=await tx.batch(['SELECT * FROM events WHERE id=1',registrationSQL+' ORDER BY r.created_at DESC,r.id',adminRosterSQL,'SELECT * FROM prize_sessions ORDER BY created_at,id','SELECT * FROM prize_draws ORDER BY created_at,session_id,position,id','SELECT show_winners FROM display_controls WHERE id=1']);
       const e=ev.rows[0], registrations=regs.rows.map(registrationRow),roster=rs.rows.map(rosterRow),sessions=ss.rows.map(sessionRow),draws=ds.rows.map(drawRow);
       const selected=new Set(draws.map(d=>d.rosterId)); await tx.commit();
       return {serverTime:this.now(),event:{id:1,title:String(e.title),date:String(e.date),venue:String(e.venue),targetWinners:Number(e.target_winners),registrationOpen:Boolean(e.registration_open),demo:Boolean(e.demo)},registrations,roster,sessions,draws,registrationUrl,showWinners:Boolean(controls.rows[0].show_winners),
