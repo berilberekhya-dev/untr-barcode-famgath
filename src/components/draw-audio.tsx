@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { ProjectorVolumes, PublicDraw } from '@/lib/types';
+import type { DrawIntro, ProjectorVolumes, PublicDraw } from '@/lib/types';
 
 const EVENT_AUDIO = process.env.NEXT_PUBLIC_EVENT_AUDIO === 'true';
 const ANTHEM = '/audio/event/champions-anthem.mp3';
@@ -15,21 +15,32 @@ async function loadClip(context: AudioContext, path: string) {
   return context.decodeAudioData(await response.arrayBuffer());
 }
 
-function playClip(context: AudioContext, buffer: AudioBuffer, destination: AudioNode, loop: boolean) {
+function createClip(context: AudioContext, buffer: AudioBuffer, destination: AudioNode) {
   const source = context.createBufferSource();
   source.buffer = buffer;
-  source.loop = loop;
   source.connect(destination);
   source.addEventListener('ended', () => source.disconnect(), { once: true });
-  source.start();
   return source;
 }
 
-export function DrawAudio({ draws, now, muted, volumes = DEFAULT_VOLUMES }: { draws?: PublicDraw[]; now: number; muted: boolean; volumes?: ProjectorVolumes }) {
+function playDrum(context: AudioContext, buffer: AudioBuffer, destination: AudioNode, intro: DrawIntro, now: number) {
+  const source = createClip(context, buffer, destination);
+  source.loop = true;
+  // Join two matched points in the recorded crescendo, away from the intro and fade.
+  source.loopStart = EVENT_AUDIO ? 4.559615 : buffer.duration * 0.3;
+  source.loopEnd = EVENT_AUDIO ? 5.602902 : buffer.duration * 0.9;
+  const elapsed = Math.max(0, now - intro.startsAt) / 1000;
+  const loopLength = source.loopEnd - source.loopStart;
+  const offset = elapsed < source.loopEnd ? elapsed : source.loopStart + (elapsed - source.loopEnd) % loopLength;
+  source.start(0, offset, (intro.endsAt - now) / 1000);
+  return source;
+}
+
+export function DrawAudio({ draws, intro, now, muted, volumes = DEFAULT_VOLUMES }: { draws?: PublicDraw[]; intro?: DrawIntro | null; now: number; muted: boolean; volumes?: ProjectorVolumes }) {
   const audio = useRef<AudioContext | null>(null);
   const mixer = useRef<{ master: GainNode; music: GainNode; snare: GainNode; fanfare: GainNode; musicLevel: number } | null>(null);
   const clips = useRef<{ drum: AudioBuffer; brass: AudioBuffer } | null>(null);
-  const drum = useRef<AudioBufferSourceNode | null>(null);
+  const drum = useRef<{ source: AudioBufferSourceNode; endsAt: number } | null>(null);
   const announcements = useRef(new Set<AudioBufferSourceNode>());
   const seenResults = useRef(new Set<string>());
   const receivedSnapshot = useRef(false);
@@ -115,18 +126,20 @@ export function DrawAudio({ draws, now, muted, volumes = DEFAULT_VOLUMES }: { dr
     }
     if (!context || !mix) return;
     const canPlay = ready && buffers && !muted && context.state === 'running';
-
-    if (announce && canPlay) {
-      const cue = playClip(context, buffers.brass, mix.fanfare, false);
-      announcements.current.add(cue);
-      cue.addEventListener('ended', () => announcements.current.delete(cue), { once: true });
+    const playingIntro = canPlay && intro && now >= intro.startsAt && now < intro.endsAt;
+    if (drum.current && (!playingIntro || drum.current.endsAt !== intro.endsAt)) {
+      drum.current.source.stop();
+      drum.current = null;
+    }
+    if (playingIntro && !drum.current) {
+      drum.current = { source: playDrum(context, buffers.drum, mix.snare, intro, now), endsAt: intro.endsAt };
     }
 
-    if (rolling && canPlay) {
-      drum.current ??= playClip(context, buffers.drum, mix.snare, true);
-    } else if (drum.current) {
-      drum.current.stop();
-      drum.current = null;
+    if (announce && canPlay) {
+      const cue = createClip(context, buffers.brass, mix.fanfare);
+      announcements.current.add(cue);
+      cue.addEventListener('ended', () => announcements.current.delete(cue), { once: true });
+      cue.start();
     }
     if (muted) {
       for (const cue of announcements.current) cue.stop();
@@ -138,7 +151,7 @@ export function DrawAudio({ draws, now, muted, volumes = DEFAULT_VOLUMES }: { dr
       mix.musicLevel = musicLevel;
       mix.music.gain.setTargetAtTime(musicLevel, context.currentTime, 0.12);
     }
-  }, [draws, muted, now, ready, rolling, volumes.standby, volumes.rolling]);
+  }, [draws, intro, muted, now, ready, rolling, volumes.standby, volumes.rolling]);
 
   return null;
 }

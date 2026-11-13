@@ -5,15 +5,22 @@ import jsQR from 'jsqr';
 test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali per reveal',async({page})=>{
   await page.setViewportSize({width:1920,height:1080});
   await page.addInitScript(()=>{
-    const probe=window as typeof window & { drawSounds:string[]; audioLevels:number[]; brassDurations:number[]; activeBrass:number; peakBrass:number; anthemLoops:boolean };
+    const probe=window as typeof window & { drawSounds:string[]; audioLevels:number[]; brassDurations:number[]; activeBrass:number; peakBrass:number; anthemLoops:boolean; drumPlaying:boolean; drumLoop:number[] };
     probe.drawSounds=[];
     probe.audioLevels=[];
     probe.brassDurations=[];
     probe.activeBrass=0;
     probe.peakBrass=0;
+    probe.drumPlaying=false;
+    probe.drumLoop=[];
     const start=AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start=function(...args){
       probe.drawSounds.push(this.loop ? 'snare' : 'brass');
+      if(this.loop){
+        probe.drumPlaying=true;
+        probe.drumLoop=[this.loopStart,this.loopEnd,args[1]??0,args[2]??0];
+        this.addEventListener('ended',()=>{probe.drumPlaying=false;},{once:true});
+      }
       if(!this.loop && this.buffer){
         probe.brassDurations.push(this.buffer.duration);
         probe.activeBrass++;
@@ -35,8 +42,8 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
     };
   });
   const probe=()=>page.evaluate(()=>{
-    const state=window as typeof window & {drawSounds:string[];audioLevels:number[];brassDurations:number[];peakBrass:number;anthemLoops:boolean};
-    return { sounds:state.drawSounds.filter(sound=>sound!=='anthem'), levels:state.audioLevels, brassDurations:state.brassDurations, peakBrass:state.peakBrass, anthemPlaying:state.drawSounds.includes('anthem'), anthemLoops:state.anthemLoops };
+    const state=window as typeof window & {drawSounds:string[];audioLevels:number[];brassDurations:number[];peakBrass:number;anthemLoops:boolean;drumPlaying:boolean;drumLoop:number[]};
+    return { sounds:state.drawSounds.filter(sound=>sound!=='anthem'), levels:state.audioLevels, brassDurations:state.brassDurations, peakBrass:state.peakBrass, anthemPlaying:state.drawSounds.includes('anthem'), anthemLoops:state.anthemLoops, drumPlaying:state.drumPlaying, drumLoop:state.drumLoop };
   });
   const hasAnthem=['champions-anthem.mp3','drum-roll.mp3','brass-reveal-6-9.mp3'].every(file=>existsSync(`public/audio/event/${file}`));
   let started: number | undefined;
@@ -45,10 +52,11 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
     const {audioMuted,audioVolumes}=await (await page.request.get('/api/display')).json();
     const start=started;
     const draws=start===undefined ? [] : prizes.map((_,i)=>({id:`catalog-test-${i}`,status:'confirmed',position:i+1,
-      fullName:`Peserta Pengujian ${i+1}`,createdAt:start,revealAt:start+3500+i*2000,
+      fullName:`Peserta Pengujian ${i+1}`,createdAt:start,revealAt:start+8000+i*2000,
       reelNames:['Peserta Pengujian 1','Peserta Pengujian 2','Peserta Pengujian 3','Peserta Pengujian 4','Peserta Pengujian 5'],reelIndex:i}));
     await route.fulfill({json:{
     event:{demo:false},serverTime:Date.now(),showWinners:false,audioMuted,audioVolumes,currentDraws:draws,
+    drawIntro:start===undefined ? null : {startsAt:start,endsAt:draws[0].revealAt},
     currentSession:{id:'catalog-test',size:5,prizeName:'Door Prize · Ronde 1',prizes},
     }});
   });
@@ -65,11 +73,20 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
   await expect(page.locator('.stage-prize-list li')).toHaveCount(5);
   await expect(page.locator('.spatial-slot .slot-prize')).toHaveText(prizes.map(p=>p.name));
   await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0.1);
-  await expect(page.locator('.slot-1')).toHaveClass(/slot-revealed/,{timeout:7000});
+  await expect.poll(async()=>(await probe()).drumPlaying).toBe(true);
+  if(hasAnthem){
+    const [loopStart,loopEnd,offset,duration]= (await probe()).drumLoop;
+    expect(loopStart).toBeCloseTo(4.56);
+    expect(loopEnd).toBeCloseTo(5.60);
+    expect(offset+duration).toBeCloseTo(8);
+  }
+  await expect(page.locator('.slot-1')).toHaveClass(/slot-revealed/,{timeout:10000});
   await expect(page.locator('.slot-2 .reel-machine')).toHaveClass(/is-spinning/);
+  await expect.poll(async()=>(await probe()).drumPlaying).toBe(false);
   await expect.poll(async()=> (await probe()).sounds.slice(0,2)).toEqual(['snare','brass']);
   await expect(page.locator('.slot-5')).toHaveClass(/slot-revealed/,{timeout:12000});
   await expect.poll(async()=> (await probe()).sounds).toEqual(['snare','brass','brass','brass','brass','brass']);
+  expect((await probe()).drumPlaying).toBe(false);
   if(hasAnthem){
     const {brassDurations,peakBrass}=await probe();
     for(const duration of brassDurations) expect(duration).toBeCloseTo(3,1);

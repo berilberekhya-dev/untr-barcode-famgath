@@ -257,7 +257,9 @@ export class GatheringService {
     const publicDraws=s.draws.filter(d=>d.status==='confirmed').map(({nrp:_,rosterId:__,requestKey:___,...d})=>({...d,prizeName:slotPrize(s.sessions.find(p=>p.id===d.sessionId),d.position)}));
     const last=s.draws.at(-1); const currentSession=s.sessions.find(p=>p.id===last?.sessionId)||null;
     const currentDraws=currentSession?publicDraws.filter(d=>d.sessionId===currentSession.id):[];
-    return {event:s.event,registrationUrl,serverTime:s.serverTime,names:s.roster.filter(r=>r.source==='excel'&&r.drawEnabled&&!s.draws.some(d=>d.rosterId===r.id)).map(r=>r.fullName),draws:publicDraws,active:publicDraws.find(d=>d.revealAt>this.now())||null,currentDraw:currentDraws.at(-1)||null,currentSession,currentDraws,confirmedCount:s.stats.confirmed,eligibleCount:s.stats.eligible,showWinners:s.showWinners&&s.stats.confirmed>=s.event.targetWinners,audioMuted:s.audioMuted,audioVolumes:s.audioVolumes,nextRound:currentSession?undefined:s.nextRound};
+    // Include forfeited results so removing the first winner cannot restart the drum.
+    const drawIntro=last ? { startsAt:last.createdAt, endsAt:Math.min(...s.draws.filter(draw=>draw.requestKey===last.requestKey).map(draw=>draw.revealAt)) } : null;
+    return {event:s.event,registrationUrl,serverTime:s.serverTime,names:s.roster.filter(r=>r.source==='excel'&&r.drawEnabled&&!s.draws.some(d=>d.rosterId===r.id)).map(r=>r.fullName),draws:publicDraws,active:publicDraws.find(d=>d.revealAt>this.now())||null,currentDraw:currentDraws.at(-1)||null,currentSession,currentDraws,drawIntro,confirmedCount:s.stats.confirmed,eligibleCount:s.stats.eligible,showWinners:s.showWinners&&s.stats.confirmed>=s.event.targetWinners,audioMuted:s.audioMuted,audioVolumes:s.audioVolumes,nextRound:currentSession?undefined:s.nextRound};
   }
   async setProjectorAudio(input: unknown) {
     const { muted, volumes } = projectorAudioSchema.parse(input);

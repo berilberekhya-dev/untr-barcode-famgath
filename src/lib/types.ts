@@ -12,5 +12,6 @@ export type AdminState = { serverTime: number; event: EventSettings; registratio
   audioMuted: boolean; audioVolumes: ProjectorVolumes; catalogSize?: number; nextRound?: PrizeRound;
   stats: { employees: number; people: number; eligible: number; confirmed: number; received: number; plannedPeople: number; surplus: number; shortage: number; couponCount: number } };
 export type PublicDraw = Omit<Draw, 'nrp' | 'rosterId' | 'requestKey'> & {prizeName?:string};
+export type DrawIntro = { startsAt: number; endsAt: number };
 export type DisplayState = { event: EventSettings; registrationUrl: string; serverTime: number; names: string[]; draws: PublicDraw[]; active: PublicDraw | null; currentDraw: PublicDraw | null;
-  currentSession: PrizeSession | null; currentDraws: PublicDraw[]; confirmedCount: number; eligibleCount: number; showWinners:boolean; audioMuted: boolean; audioVolumes: ProjectorVolumes; nextRound?: PrizeRound };
+  currentSession: PrizeSession | null; currentDraws: PublicDraw[]; drawIntro: DrawIntro | null; confirmedCount: number; eligibleCount: number; showWinners:boolean; audioMuted: boolean; audioVolumes: ProjectorVolumes; nextRound?: PrizeRound };
