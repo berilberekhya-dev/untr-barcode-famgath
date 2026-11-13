@@ -2,7 +2,7 @@ import { randomInt, randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { StorageTransaction } from './storage';
 import { getDatabase, retryBusy, type Database } from './database';
-import type { AdminState, CatalogPrize, DisplayState, Draw, PrizeSession, Registration, RosterEntry } from './types';
+import type { AdminState, CatalogPrize, DisplayState, Draw, EventSettings, PrizeSession, Registration, RegistrationDisplay, RosterEntry } from './types';
 import {formatPersonName} from './person-name';
 import { slotPrize, upcomingRound } from './prizes';
 
@@ -19,6 +19,10 @@ const projectorAudioSchema = z.object({
   volumes: z.object({ standby: volume, rolling: volume, drum: volume, brass: volume }).optional(),
 }).refine(input => input.muted !== undefined || input.volumes !== undefined);
 type Row = Record<string, unknown>;
+const eventRow = (row: Row): EventSettings => ({ id: 1, title: String(row.title), date: String(row.date), venue: String(row.venue),
+  targetWinners: Number(row.target_winners), registrationOpen: Boolean(row.registration_open), demo: Boolean(row.demo) });
+const eventQuery = 'SELECT * FROM events WHERE id=1';
+const registrationDateFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'Asia/Jakarta' });
 const rosterRow = (r: Row): RosterEntry => ({ id:String(r.id), nrp:String(r.nrp), fullName:formatPersonName(String(r.full_name)), company:String(r.company), plannedSize:Number(r.checkin_planned_size), source:r.source as 'excel'|'uts', drawEnabled:Boolean(r.draw_enabled), attendanceNote:String(r.attendance_note), tableNumber:r.table_number==null?null:String(r.table_number) });
 const sessionRow = (r: Row): PrizeSession => ({ id:String(r.id), prizeName:String(r.prize_name), prizeImage:String(r.prize_image), size:Number(r.size), baseSlot:Number(r.base_slot), createdAt:Number(r.created_at) });
 const catalogRow = (row: Row): CatalogPrize => ({ slot: Number(row.slot), name: String(row.name), grand: Boolean(row.grand) });
@@ -51,7 +55,15 @@ function validateImage(image: string) {
 }
 
 export class GatheringService {
-  constructor(private storage: Database, private now = () => Date.now()) {}
+  constructor(private storage: Database, private now = () => Date.now(), private registrationDate = '') {}
+  private registrationSchedule(now: number) {
+    if (!this.registrationDate) return null;
+    const starts = Date.parse(`${this.registrationDate}T00:00:00+07:00`);
+    const date = registrationDateFormat.format(starts);
+    if (now < starts) return `Registrasi dibuka pada ${date} pukul 00.00 WIB.`;
+    if (now >= starts + 86_400_000) return `Registrasi ${date} telah berakhir.`;
+    return null;
+  }
   private async write<T>(fn: (tx: StorageTransaction) => Promise<T>): Promise<T> {
     await this.storage.ready();
     return this.storage.serializeWrite(() => retryBusy(async () => {
@@ -79,8 +91,13 @@ export class GatheringService {
       return { imported:entries.length };
     });
   }
-  async lookup(input: unknown) {
+  async lookup(input: unknown, assisted = false) {
     const {nrp}=z.object({nrp:nrpSchema}).parse(input); await this.storage.ready();
+    const schedule = this.registrationSchedule(this.now());
+    if (schedule) throw new AppError(schedule, 403);
+    if (!assisted && !(await this.storage.client.execute(eventQuery)).rows[0].registration_open) {
+      throw new AppError('Registrasi sedang ditutup. Silakan hubungi panitia.', 403);
+    }
     const r=(await this.storage.client.execute({sql:checkInRosterSQL,args:[nrp]})).rows[0];
     if (!r) throw new AppError('NRP tidak terdaftar pada daftar awal. Silakan hubungi panitia.',404);
     return {fullName:formatPersonName(String(r.full_name)),company:String(r.company),doorprizeEligible:r.source==='excel'&&Boolean(r.draw_enabled)};
@@ -93,7 +110,9 @@ export class GatheringService {
         if (prior.nrp!==data.nrp||Number(prior.party_size)!==data.partySize) throw new AppError('Permintaan ini sudah digunakan untuk data lain.',409);
         return registrationRow((await tx.execute({sql:registrationSQL+' WHERE r.id=?',args:[String(prior.id)]})).rows[0]);
       }
-      const e=(await tx.execute('SELECT registration_open FROM events WHERE id=1')).rows[0];
+      const schedule = this.registrationSchedule(this.now());
+      if (schedule) throw new AppError(schedule, 403);
+      const e=(await tx.execute(eventQuery)).rows[0];
       if (!e.registration_open&&!assisted) throw new AppError('Registrasi sedang ditutup. Silakan hubungi panitia.',403);
       const roster=(await tx.execute({sql:checkInRosterSQL,args:[data.nrp]})).rows[0];
       if (!roster) throw new AppError('NRP tidak terdaftar pada daftar awal. Silakan hubungi panitia.',404);
@@ -248,7 +267,8 @@ export class GatheringService {
       const {show_winners, muted, standby, rolling, drum, brass}=controls.rows[0];
       const audioVolumes={standby:Number(standby),rolling:Number(rolling),drum:Number(drum),brass:Number(brass)};
       const selected=new Set(draws.map(d=>d.rosterId)); await tx.commit();
-      return {serverTime:this.now(),event:{id:1,title:String(e.title),date:String(e.date),venue:String(e.venue),targetWinners:Number(e.target_winners),registrationOpen:Boolean(e.registration_open),demo:Boolean(e.demo)},registrations,roster,sessions,draws,registrationUrl,showWinners:Boolean(show_winners),audioMuted:Boolean(muted),audioVolumes,catalogSize:catalog.length,nextRound,
+      const serverTime=this.now();
+      return {serverTime,event:eventRow(e),registrationNotice:this.registrationSchedule(serverTime),registrations,roster,sessions,draws,registrationUrl,showWinners:Boolean(show_winners),audioMuted:Boolean(muted),audioVolumes,catalogSize:catalog.length,nextRound,
         stats:{employees:registrations.length,people:registrations.reduce((n,r)=>n+r.partySize,0),eligible:roster.filter(r=>r.source==='excel'&&r.drawEnabled&&!selected.has(r.id)).length,confirmed:draws.filter(d=>d.status==='confirmed').length,received:draws.filter(d=>d.receivedAt!=null).length,plannedPeople:roster.reduce((n,r)=>n+r.plannedSize,0),surplus:registrations.reduce((n,r)=>n+Math.max(0,r.plannedSize-r.partySize-r.transferredOut),0),shortage:registrations.reduce((n,r)=>n+Math.max(0,r.partySize-r.couponCount),0),couponCount:registrations.reduce((n,r)=>n+r.couponCount,0)}};
     } finally {tx.close();}
   }
@@ -259,7 +279,7 @@ export class GatheringService {
     const currentDraws=currentSession?publicDraws.filter(d=>d.sessionId===currentSession.id):[];
     // Include forfeited results so removing the first winner cannot restart the drum.
     const drawIntro=last ? { startsAt:last.createdAt, endsAt:Math.min(...s.draws.filter(draw=>draw.requestKey===last.requestKey).map(draw=>draw.revealAt)) } : null;
-    return {event:s.event,registrationUrl,serverTime:s.serverTime,names:s.roster.filter(r=>r.source==='excel'&&r.drawEnabled&&!s.draws.some(d=>d.rosterId===r.id)).map(r=>r.fullName),draws:publicDraws,active:publicDraws.find(d=>d.revealAt>this.now())||null,currentDraw:currentDraws.at(-1)||null,currentSession,currentDraws,drawIntro,confirmedCount:s.stats.confirmed,eligibleCount:s.stats.eligible,showWinners:s.showWinners&&s.stats.confirmed>=s.event.targetWinners,audioMuted:s.audioMuted,audioVolumes:s.audioVolumes,nextRound:currentSession?undefined:s.nextRound};
+    return {event:{...s.event,registrationOpen:s.event.registrationOpen&&!s.registrationNotice},registrationUrl,serverTime:s.serverTime,names:s.roster.filter(r=>r.source==='excel'&&r.drawEnabled&&!s.draws.some(d=>d.rosterId===r.id)).map(r=>r.fullName),draws:publicDraws,active:publicDraws.find(d=>d.revealAt>this.now())||null,currentDraw:currentDraws.at(-1)||null,currentSession,currentDraws,drawIntro,confirmedCount:s.stats.confirmed,eligibleCount:s.stats.eligible,showWinners:s.showWinners&&s.stats.confirmed>=s.event.targetWinners,audioMuted:s.audioMuted,audioVolumes:s.audioVolumes,nextRound:currentSession?undefined:s.nextRound};
   }
   async setProjectorAudio(input: unknown) {
     const { muted, volumes } = projectorAudioSchema.parse(input);
@@ -283,10 +303,13 @@ export class GatheringService {
       await tx.execute({sql:'UPDATE display_controls SET show_winners=? WHERE id=1',args:[Number(showWinners)]});
     });
   }
-  async registrationDisplay(registrationUrl:string) {
-    await this.storage.ready();const e=(await this.storage.client.execute('SELECT * FROM events WHERE id=1')).rows[0];
-    return {serverTime:this.now(),registrationUrl,event:{id:1,title:String(e.title),date:String(e.date),venue:String(e.venue),targetWinners:Number(e.target_winners),registrationOpen:Boolean(e.registration_open),demo:Boolean(e.demo)}};
+  async registrationDisplay(registrationUrl:string):Promise<RegistrationDisplay> {
+    await this.storage.ready();
+    const event=eventRow((await this.storage.client.execute(eventQuery)).rows[0]);
+    const serverTime=this.now();
+    const registrationNotice=this.registrationSchedule(serverTime);
+    return {serverTime,registrationUrl,registrationNotice,event:{...event,registrationOpen:event.registrationOpen&&!registrationNotice}};
   }
   async setDemo() {await this.storage.ready();await this.storage.client.execute('UPDATE events SET demo=1 WHERE id=1');}
 }
-export function getService(){return new GatheringService(getDatabase());}
+export function getService(){return new GatheringService(getDatabase(),undefined,process.env.VERCEL_ENV==='production'?'2026-11-14':'');}

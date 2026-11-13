@@ -40,6 +40,7 @@ export async function POST(request: NextRequest, context: Context) {
     const body = await request.json();
     const service = getService();
     if (action.join('/') === 'registrations') return service.register(body, true);
+    if (action.join('/') === 'registrations/lookup') return service.lookup(body, true);
     if (action.join('/') === 'draw') return service.draw(body);
     if (action.join('/') === 'display') { await service.setWinnerDisplay(body); return {ok:true}; }
     if (action.join('/') === 'display/audio') { await service.setProjectorAudio(body); return {ok:true}; }

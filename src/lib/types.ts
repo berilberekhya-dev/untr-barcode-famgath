@@ -1,4 +1,5 @@
 export type EventSettings = { id: number; title: string; date: string; venue: string; targetWinners: number; registrationOpen: boolean; demo: boolean };
+export type RegistrationDisplay = { serverTime: number; registrationUrl: string; event: EventSettings; registrationNotice: string | null };
 export type RosterEntry = { id: string; nrp: string; fullName: string; company: string; plannedSize: number; source: 'excel' | 'uts'; drawEnabled: boolean; attendanceNote: string; tableNumber: string | null };
 export type Registration = { id: string; nrp: string; fullName: string; partySize: number; createdAt: number; plannedSize: number; company: string; acknowledgedExtra: boolean; extraCoupons: number; transferredOut: number; couponCount: number; seatCount: number; tableNumber: string | null };
 export type DrawStatus = 'confirmed' | 'forfeited';
@@ -9,7 +10,7 @@ export type PrizeSession = { id: string; prizeName: string; prizeImage: string; 
 export type DrawResult = { session: PrizeSession; draws: Draw[] };
 export type ProjectorVolumes = { standby: number; rolling: number; drum: number; brass: number };
 export type AdminState = { serverTime: number; event: EventSettings; registrations: Registration[]; roster: RosterEntry[]; sessions: PrizeSession[]; draws: Draw[]; registrationUrl: string; showWinners: boolean;
-  audioMuted: boolean; audioVolumes: ProjectorVolumes; catalogSize?: number; nextRound?: PrizeRound;
+  audioMuted: boolean; audioVolumes: ProjectorVolumes; registrationNotice: string | null; catalogSize?: number; nextRound?: PrizeRound;
   stats: { employees: number; people: number; eligible: number; confirmed: number; received: number; plannedPeople: number; surplus: number; shortage: number; couponCount: number } };
 export type PublicDraw = Omit<Draw, 'nrp' | 'rosterId' | 'requestKey'> & {prizeName?:string};
 export type DrawIntro = { startsAt: number; endsAt: number };

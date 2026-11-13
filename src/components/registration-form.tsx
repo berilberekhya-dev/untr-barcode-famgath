@@ -26,7 +26,7 @@ export function RegistrationForm({ initial, assisted = false, disabled = false, 
     setLookingUp(true);
     const timer = setTimeout(async () => {
       try {
-        const result = await api<{fullName:string;company:string}>('/api/registrations/lookup', {nrp});
+        const result = await api<{fullName:string;company:string}>(assisted ? '/api/admin/registrations/lookup' : '/api/registrations/lookup', {nrp});
         if (sequence !== lookupSequence.current) return;
         setVerified({...result,nrp}); setFullName(result.fullName);
       } catch(e) {
@@ -34,7 +34,7 @@ export function RegistrationForm({ initial, assisted = false, disabled = false, 
       } finally { if (sequence === lookupSequence.current) setLookingUp(false); }
     }, 400);
     return () => { clearTimeout(timer); ++lookupSequence.current; };
-  }, [nrp, initial, disabled]);
+  }, [nrp, initial, disabled, assisted]);
   const request = useRef<{ fingerprint: string; requestKey: string } | null>(null);
   useEffect(() => {
     if (assisted || initial) return;

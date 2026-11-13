@@ -81,6 +81,30 @@ it('jumlah lebih memerlukan konfirmasi dan tidak otomatis mendapat tambahan kupo
 it('jumlah kurang dicatat dan alokasi sisa hanya dilakukan panitia, idempoten',async()=>{const donor=await s.register(payload(1,1)),recipient=await s.register({...payload(2,5),acknowledgedExtra:true});const op={donorId:donor.id,recipientId:recipient.id,quantity:2,requestKey:randomUUID()};await s.transferCoupons(op);await s.transferCoupons(op);const state=await s.state(endpoint);expect(state.stats.surplus).toBe(0);expect(state.stats.shortage).toBe(0);expect(state.registrations.find(r=>r.id===recipient.id)?.couponCount).toBe(5);await expect(s.transferCoupons({...op,quantity:1,requestKey:randomUUID()})).rejects.toMatchObject({status:409});await expect(s.editRegistration(donor.id,{...payload(1,3)})).rejects.toMatchObject({status:409});});
 it('permintaan check-in ulang idempoten; duplikat NRP ditolak',async()=>{const p=payload();const a=await s.register(p);expect((await s.register(p)).id).toBe(a.id);await expect(s.register({...p,requestKey:randomUUID()})).rejects.toMatchObject({status:409});await expect(s.register({...p,partySize:1})).rejects.toMatchObject({status:409});});
 it('registrasi tutup tetap mengizinkan bantuan panitia yang NRP-nya valid',async()=>{await s.updateEvent({...((await s.state(endpoint)).event),registrationOpen:false});await expect(s.register(payload())).rejects.toMatchObject({status:403});await s.register(payload(),true);});
+it('registrasi acara hanya menerima check-in pada 14 November WIB', async () => {
+  const scheduled = new GatheringService(db, () => clock, '2026-11-14');
+  const start = Date.parse('2026-11-14T00:00:00+07:00');
+  clock = start - 1;
+  const checkIn = payload();
+  expect(await scheduled.registrationDisplay(endpoint)).toMatchObject({
+    event: { registrationOpen: false }, registrationNotice: 'Registrasi dibuka pada 14 November 2026 pukul 00.00 WIB.',
+  });
+  await expect(scheduled.lookup({ nrp: checkIn.nrp })).rejects.toMatchObject({ status: 403 });
+  await expect(scheduled.register(checkIn)).rejects.toMatchObject({ status: 403 });
+  await expect(scheduled.register(checkIn, true)).rejects.toMatchObject({ status: 403 });
+  clock = start;
+  expect(await scheduled.registrationDisplay(endpoint)).toMatchObject({ event: { registrationOpen: true }, registrationNotice: null });
+  await expect(scheduled.lookup({ nrp: checkIn.nrp })).resolves.toMatchObject({ company: 'UT' });
+  const ticket = await scheduled.register(checkIn);
+  clock = start + 86_400_000 - 1;
+  expect((await scheduled.registrationDisplay(endpoint)).event.registrationOpen).toBe(true);
+  clock++;
+  expect(await scheduled.registrationDisplay(endpoint)).toMatchObject({
+    event: { registrationOpen: false }, registrationNotice: 'Registrasi 14 November 2026 telah berakhir.',
+  });
+  await expect(scheduled.register(payload(2))).rejects.toMatchObject({ status: 403 });
+  await expect(scheduled.receipt({ id: ticket.id, nrp: checkIn.nrp })).resolves.toMatchObject({ id: ticket.id });
+});
 it('30 check-in bersamaan tidak hilang',async()=>{const rs=await Promise.allSettled(Array.from({length:30},(_,i)=>s.register(payload(i+1))));expect(rs.every(r=>r.status==='fulfilled')).toBe(true);expect((await s.state(endpoint)).stats.people).toBe(90);});
 it('mengundi lima sekaligus tanpa perlu check-in dan tanpa peserta UTS',async()=>{const r=await s.draw({requestKey:randomUUID(),count:5,prizeName:'Sepeda'});expect(r.draws).toHaveLength(5);expect(new Set(r.draws.map(d=>d.nrp)).size).toBe(5);expect(r.draws.every(d=>d.nrp!=='000099'&&d.status==='confirmed')).toBe(true);expect((await s.state(endpoint)).registrations).toHaveLength(0);});
 it('tiga pemenang, dua gugur: redraw hanya dua slot dengan sesi hadiah sama',async()=>{const r=await s.draw({requestKey:randomUUID(),count:3,prizeName:'Televisi'});clock+=6001;await s.forfeit(r.draws[0].id);await s.forfeit(r.draws[2].id);const op={requestKey:randomUUID(),sessionId:r.session.id};const redo=await s.draw(op);expect(redo.draws.map(d=>d.position)).toEqual([1,3]);expect(redo.session.prizeName).toBe('Televisi');expect(redo.draws.every(d=>!r.draws.some(old=>old.rosterId===d.rosterId))).toBe(true);expect((await s.draw(op)).draws.map(d=>d.id)).toEqual(redo.draws.map(d=>d.id));expect((await s.state(endpoint)).stats.confirmed).toBe(3);});

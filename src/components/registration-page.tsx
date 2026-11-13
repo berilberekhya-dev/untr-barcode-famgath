@@ -1,14 +1,14 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import type { DisplayState, Registration } from '@/lib/types';
+import type { RegistrationDisplay, Registration } from '@/lib/types';
 import { Astronaut, Planet, PixelSpark, SpaceBackdrop } from './art';
 import { api, ApiError, Brand, DemoBanner, formatDate, usePoll, ErrorBox } from './shared';
 import { RegistrationForm } from './registration-form';
 import { Icon } from './icon';
 
 export function RegistrationPage() {
-  const { data, error } = usePoll<DisplayState>('/api/display?view=registration');
+  const { data, error } = usePoll<RegistrationDisplay>('/api/display?view=registration');
   const [receipt, setReceipt] = useState<Registration | null>(null);
   const [receiptError,setReceiptError]=useState('');
   useEffect(() => {
@@ -53,7 +53,7 @@ export function RegistrationPage() {
           <div className="panel-topline"><span className="eyebrow">REGISTRASI PESERTA</span><span className={`live-label ${data && !data.event.registrationOpen ? 'closed' : ''}`}><i />{!data ? 'Menghubungkan' : data.event.registrationOpen ? 'Dibuka' : 'Ditutup'}</span></div>
           <h2>Halo, penjelajah! <span className="pixel-wave">✦</span></h2><p className="panel-description">Isi data di bawah, lalu bersiap untuk momen seru bersama keluarga.</p>
           {error && <ErrorBox>{data ? 'Koneksi terputus. Mencoba terhubung kembali.' : 'Belum terhubung ke server. Periksa koneksi Anda.'}</ErrorBox>}
-          {data && !data.event.registrationOpen && <ErrorBox>Registrasi sedang ditutup. Silakan hubungi panitia.</ErrorBox>}
+          {data && !data.event.registrationOpen && <ErrorBox>{data.registrationNotice || 'Registrasi sedang ditutup. Silakan hubungi panitia.'}</ErrorBox>}
           <RegistrationForm disabled={!data || !data.event.registrationOpen} onComplete={r => r && setReceipt(r)} />
         </div>}
         <p className="under-panel"><Icon name="lock" size={13} />Data digunakan untuk kehadiran dan undian acara.</p>
