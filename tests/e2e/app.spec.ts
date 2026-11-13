@@ -45,7 +45,7 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
     const state=window as typeof window & {drawSounds:string[];audioLevels:number[];brassDurations:number[];peakBrass:number;anthemLoops:boolean;drumPlaying:boolean;drumLoop:number[]};
     return { sounds:state.drawSounds.filter(sound=>sound!=='anthem'), levels:state.audioLevels, brassDurations:state.brassDurations, peakBrass:state.peakBrass, anthemPlaying:state.drawSounds.includes('anthem'), anthemLoops:state.anthemLoops, drumPlaying:state.drumPlaying, drumLoop:state.drumLoop };
   });
-  const hasAnthem=['champions-anthem.mp3','drum-roll.mp3','brass-reveal-6-9.mp3'].every(file=>existsSync(`public/audio/event/${file}`));
+  const hasAnthem=['champions-anthem.mp3','drum-roll.mp3','brass-reveal-636-900.mp3'].every(file=>existsSync(`public/audio/event/${file}`));
   let started: number | undefined;
   const prizes=Array.from({length:5},(_,i)=>({slot:i+1,name:`Hadiah Uji Model ${i+1} dengan nama dan ukuran yang panjang`,grand:false}));
   await page.route('**/api/display',async route=>{
@@ -61,7 +61,7 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
     }});
   });
   const snareLoaded=page.waitForResponse(hasAnthem ? '**/audio/event/drum-roll.mp3' : '**/audio/snare-roll.mp3');
-  const brassLoaded=page.waitForResponse(hasAnthem ? '**/audio/event/brass-reveal-6-9.mp3' : '**/audio/brass-reveal.mp3');
+  const brassLoaded=page.waitForResponse(hasAnthem ? '**/audio/event/brass-reveal-636-900.mp3' : '**/audio/brass-reveal.mp3');
   await page.goto('/layar/doorprize');
   expect((await snareLoaded).ok()).toBe(true);
   expect((await brassLoaded).ok()).toBe(true);
@@ -89,7 +89,7 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
   expect((await probe()).drumPlaying).toBe(false);
   if(hasAnthem){
     const {brassDurations,peakBrass}=await probe();
-    for(const duration of brassDurations) expect(duration).toBeCloseTo(3,1);
+    for(const duration of brassDurations) expect(duration).toBeCloseTo(2.64,1);
     expect(peakBrass).toBeGreaterThan(1);
   }
   await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0.5);

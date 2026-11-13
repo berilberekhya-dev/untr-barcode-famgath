@@ -6,7 +6,7 @@ import type { DrawIntro, ProjectorVolumes, PublicDraw } from '@/lib/types';
 const EVENT_AUDIO = process.env.NEXT_PUBLIC_EVENT_AUDIO === 'true';
 const ANTHEM = '/audio/event/champions-anthem.mp3';
 const DRUM = EVENT_AUDIO ? '/audio/event/drum-roll.mp3' : '/audio/snare-roll.mp3';
-const BRASS = EVENT_AUDIO ? '/audio/event/brass-reveal-6-9.mp3' : '/audio/brass-reveal.mp3';
+const BRASS = EVENT_AUDIO ? '/audio/event/brass-reveal-636-900.mp3' : '/audio/brass-reveal.mp3';
 const DEFAULT_VOLUMES: ProjectorVolumes = { standby: 50, rolling: 10, drum: 90, brass: 100 };
 
 async function loadClip(context: AudioContext, path: string) {
