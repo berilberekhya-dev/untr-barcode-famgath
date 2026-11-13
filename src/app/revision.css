@@ -9,3 +9,17 @@ select{width:100%;min-height:44px;background:#0a122b;border:1px solid #34415f;co
 @media(max-width:760px){.draw-floor{padding:25px 0;gap:20px}.spatial-grid{display:flex;flex-direction:column;gap:18px}.prize-centre{order:-1;width:100%}.prize-media{height:130px}.spatial-slot,.stage-slots-1 .slot-1{width:100%}.floor-caption{font-size:9px}.floor-tagline{font-size:17px}.finale-grid{grid-template-columns:1fr}.finale-main>h1{font-size:40px}.finale-grid>li{min-height:80px}.finale-grid strong{font-size:20px}.finale-control>.button{width:100%}}
 
 .ticket-screenshot{display:flex;align-items:flex-start;gap:9px;color:var(--yellow);font-size:14px;line-height:1.5;margin-top:16px}.ticket-screenshot svg{flex-shrink:0;margin-top:2px}.boarding-pass .ticket-identity{display:flex;flex-wrap:wrap;align-items:center;gap:12px}.ticket-company{font-family:var(--body);color:var(--muted);font-size:16px;line-height:1.4;letter-spacing:0}.boarding-pass .ticket-attendance{font-size:23px;line-height:1.5}.ticket-extra{color:#ff586b;font-size:18px;font-weight:700;line-height:1.5}.boarding-pass .ticket-table{font-family:var(--display);font-size:42px;color:var(--yellow);line-height:1.2}.ticket-entitlements>div{display:flex;flex-direction:column;gap:5px;font-size:15px}.ticket-entitlements>svg{flex-shrink:0}.ticket-entitlements strong{font-size:16px;margin-bottom:3px}
+.stage-catalog .spatial-slot{position:relative;flex-direction:column;justify-content:center;padding-bottom:10px}
+.stage-catalog .slot-number{position:absolute;top:6px;left:8px;z-index:1;display:grid;place-items:center;min-width:25px;height:25px;padding-inline:4px;background:var(--yellow);color:#14172b;font:600 20px var(--display)}
+.stage-catalog .slot-revealed{border-color:var(--yellow);box-shadow:inset 0 0 0 1px #ffc92855}
+.slot-prize{color:var(--mint);font-size:clamp(14px,1.1vw,21px);font-weight:700;line-height:1.25;text-align:center;padding:4px 12px;overflow-wrap:anywhere}
+.stage-catalog .prize-centre h1{font-size:clamp(26px,2vw,42px)}
+.stage-prize-list,.catalog-preview{margin:0;padding-left:1.55em;text-align:left;line-height:1.25}
+.stage-prize-list{font-size:clamp(14px,1.12vw,21px);color:#f6f3ff}
+.stage-prize-list li,.catalog-preview li{padding:3px 0;overflow-wrap:anywhere}
+.stage-prize-list li::marker,.catalog-preview li::marker{color:var(--yellow);font-weight:700}
+.stage-catalog .grand-label{color:var(--yellow);letter-spacing:.14em;font-weight:700}
+.stage-catalog.stage-slots-1 .prize-centre{grid-column:1/-1}
+.draw-audio{display:grid;gap:4px}
+.finale-pages{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:14px}
+@media (prefers-reduced-motion:reduce){.is-spinning .reel-track{visibility:hidden}}

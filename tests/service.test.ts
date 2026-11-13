@@ -23,6 +23,33 @@ beforeEach(async()=>{
  db=createDatabase(url);clock=Date.now();s=new GatheringService(db,()=>clock);await s.importRoster([...Array.from({length:50},(_,i)=>entry(i+1)),{...entry(99),source:'uts',drawEnabled:false,plannedSize:1,company:'UTS'}]);
 });
 afterEach(async()=>{await db?.client.close();});
+it('katalog mengunci hadiah dan urutan reveal, termasuk pengganti dan grand prize', async () => {
+  for (let slot = 1; slot <= 8; slot++) {
+    await db.client.execute({
+      sql: 'INSERT INTO prize_catalog(slot,name,grand) VALUES(?,?,?)',
+      args: [slot, `Hadiah Uji ${slot}`, Number(slot > 5)],
+    });
+  }
+  await s.updateEvent({ ...(await s.state(endpoint)).event, targetWinners: 8 });
+  const request = { requestKey: randomUUID(), catalogSlot: 1 };
+  const first = await s.draw(request);
+  expect(first.draws.map(draw => draw.revealAt - draw.createdAt)).toEqual([8000, 11000, 14000, 17000, 20000]);
+  expect((await s.draw(request)).session).toEqual(first.session);
+  clock += 11001;
+  await expect(s.draw({ requestKey: randomUUID(), catalogSlot: 6 })).rejects.toMatchObject({status:409});
+  clock += 9000;
+  await expect(s.draw({ requestKey: randomUUID(), catalogSlot: 1 })).rejects.toMatchObject({status:409});
+  await s.forfeit(first.draws[2].id);
+  const replacement = await s.draw({ requestKey: randomUUID(), sessionId: first.session.id });
+  expect(replacement.draws.map(draw => draw.position)).toEqual([3]);
+  expect((await s.display(endpoint)).currentDraw?.prizeName).toBe('Hadiah Uji 3');
+  clock += 8001;
+  const grand = await s.draw({ requestKey: randomUUID(), catalogSlot: 6 });
+  expect(grand.session.prizes).toEqual([{ slot: 6, name: 'Hadiah Uji 6', grand: true }]);
+  expect(grand.draws).toHaveLength(1);
+  expect(grand.draws[0].revealAt - grand.draws[0].createdAt).toBe(12000);
+  expect((await s.state(endpoint)).nextRound?.prizes[0].slot).toBe(7);
+});
 it('peserta khusus undian baru bisa check-in setelah impor daftar hadir resmi', async () => {
   const person = { ...entry(500), tableNumber: undefined };
   await s.importRoster([person]);

@@ -9,6 +9,7 @@ export const dataTables = [
   'events', 'registrations', 'draws', 'app_migrations', 'attendance_roster',
   'registration_details', 'coupon_transfers', 'prize_sessions', 'prize_requests',
   'prize_draws', 'display_controls', 'roster_seating', 'registration_seating', 'draw_only_roster',
+  'prize_catalog', 'prize_session_catalog',
 ] as const;
 
 // Only placeholders outside SQL literals are converted; values stay parameterized.

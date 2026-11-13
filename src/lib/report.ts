@@ -1,3 +1,4 @@
+import { slotPrize } from './prizes';
 import type { AdminState } from './types';
 const time = (value: number) => new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'short', timeStyle: 'short' }).format(value);
 export async function buildReport(state: AdminState) {
@@ -40,7 +41,7 @@ export async function buildReport(state: AdminState) {
   autoTable(doc, {
     startY: 40, margin: { top: 31, bottom: 15, left: 12, right: 12 },
     head: [['Slot', 'NRP', 'Nama terpilih', 'Status', 'Nama hadiah', 'Pengambilan', 'Dipilih (WIB)']],
-    body: state.draws.length ? state.draws.map(d => [d.slot, d.nrp, d.fullName, labels[d.status], state.sessions.find(s=>s.id===d.sessionId)?.prizeName||'-', d.status === 'confirmed' ? d.receivedAt ? `Diambil ${time(d.receivedAt)}` : 'Belum diambil' : '-', time(d.createdAt)]) : [['-', '-', 'Belum ada undian', '-', '-', '-', '-']],
+    body: state.draws.length ? state.draws.map(d => [d.slot, d.nrp, d.fullName, labels[d.status], slotPrize(state.sessions.find(s=>s.id===d.sessionId),d.position), d.status === 'confirmed' ? d.receivedAt ? `Diambil ${time(d.receivedAt)}` : 'Belum diambil' : '-', time(d.createdAt)]) : [['-', '-', 'Belum ada undian', '-', '-', '-', '-']],
     styles: { font: 'helvetica', fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
     headStyles: { fillColor: [20, 32, 74] }, alternateRowStyles: { fillColor: [244, 247, 252] },
 

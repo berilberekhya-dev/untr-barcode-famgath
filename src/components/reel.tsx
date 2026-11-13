@@ -21,7 +21,12 @@ export const NameReel=memo(function NameReel({draw,now}:{draw?:PublicDraw|null;n
       ref.current.style.transform=`translateY(-${target}px)`;
       if(Date.now()+clockOffset.current<draw.revealAt&&draw.reelNames.length>1&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
         const overshoot=draw.reelNames.length>1?h*.25:0;
-        animation=ref.current.animate([{transform:'translateY(0)',offset:0,easing:'cubic-bezier(.12,.65,.2,1)'},{transform:`translateY(-${target+overshoot}px)`,offset:.94,easing:'ease-out'},{transform:`translateY(-${target}px)`,offset:1}],{duration:draw.revealAt-draw.createdAt,fill:'forwards'});
+        animation=ref.current.animate([
+          {transform:'translateY(0)',offset:0},
+          {transform:`translateY(-${target*.78}px)`,offset:.68,easing:'cubic-bezier(.2,.65,.3,1)'},
+          {transform:`translateY(-${target+overshoot}px)`,offset:.97,easing:'ease-out'},
+          {transform:`translateY(-${target}px)`,offset:1},
+        ],{duration:draw.revealAt-draw.createdAt,fill:'forwards'});
         animation.currentTime=Math.max(0,Date.now()+clockOffset.current-draw.createdAt);
       }
     };render();window.addEventListener('resize',render);return()=>{animation?.cancel();window.removeEventListener('resize',render);};
