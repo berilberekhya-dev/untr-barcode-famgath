@@ -5,12 +5,21 @@ import jsQR from 'jsqr';
 test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali per reveal',async({page})=>{
   await page.setViewportSize({width:1920,height:1080});
   await page.addInitScript(()=>{
-    const probe=window as typeof window & { drawSounds:string[]; audioLevels:number[]; anthemLoops:boolean };
+    const probe=window as typeof window & { drawSounds:string[]; audioLevels:number[]; brassDurations:number[]; activeBrass:number; peakBrass:number; anthemLoops:boolean };
     probe.drawSounds=[];
     probe.audioLevels=[];
+    probe.brassDurations=[];
+    probe.activeBrass=0;
+    probe.peakBrass=0;
     const start=AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start=function(...args){
       probe.drawSounds.push(this.loop ? 'snare' : 'brass');
+      if(!this.loop && this.buffer){
+        probe.brassDurations.push(this.buffer.duration);
+        probe.activeBrass++;
+        probe.peakBrass=Math.max(probe.peakBrass,probe.activeBrass);
+        this.addEventListener('ended',()=>probe.activeBrass--,{once:true});
+      }
       return start.apply(this,args);
     };
     const target=AudioParam.prototype.setTargetAtTime;
@@ -26,42 +35,47 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
     };
   });
   const probe=()=>page.evaluate(()=>{
-    const state=window as typeof window & {drawSounds:string[];audioLevels:number[];anthemLoops:boolean};
-    return { sounds:state.drawSounds.filter(sound=>sound!=='anthem'), levels:state.audioLevels, anthemPlaying:state.drawSounds.includes('anthem'), anthemLoops:state.anthemLoops };
+    const state=window as typeof window & {drawSounds:string[];audioLevels:number[];brassDurations:number[];peakBrass:number;anthemLoops:boolean};
+    return { sounds:state.drawSounds.filter(sound=>sound!=='anthem'), levels:state.audioLevels, brassDurations:state.brassDurations, peakBrass:state.peakBrass, anthemPlaying:state.drawSounds.includes('anthem'), anthemLoops:state.anthemLoops };
   });
-  const hasAnthem=['champions-anthem.mp3','drum-roll.mp3','brass-reveal.mp3'].every(file=>existsSync(`public/audio/event/${file}`));
+  const hasAnthem=['champions-anthem.mp3','drum-roll.mp3','brass-reveal-6-9.mp3'].every(file=>existsSync(`public/audio/event/${file}`));
   let started: number | undefined;
   const prizes=Array.from({length:5},(_,i)=>({slot:i+1,name:`Hadiah Uji Model ${i+1} dengan nama dan ukuran yang panjang`,grand:false}));
   await page.route('**/api/display',async route=>{
-    const {audioMuted}=await (await page.request.get('/api/display')).json();
+    const {audioMuted,audioVolumes}=await (await page.request.get('/api/display')).json();
     const start=started;
     const draws=start===undefined ? [] : prizes.map((_,i)=>({id:`catalog-test-${i}`,status:'confirmed',position:i+1,
       fullName:`Peserta Pengujian ${i+1}`,createdAt:start,revealAt:start+3500+i*2000,
       reelNames:['Peserta Pengujian 1','Peserta Pengujian 2','Peserta Pengujian 3','Peserta Pengujian 4','Peserta Pengujian 5'],reelIndex:i}));
     await route.fulfill({json:{
-    event:{demo:false},serverTime:Date.now(),showWinners:false,audioMuted,currentDraws:draws,
+    event:{demo:false},serverTime:Date.now(),showWinners:false,audioMuted,audioVolumes,currentDraws:draws,
     currentSession:{id:'catalog-test',size:5,prizeName:'Door Prize · Ronde 1',prizes},
     }});
   });
   const snareLoaded=page.waitForResponse(hasAnthem ? '**/audio/event/drum-roll.mp3' : '**/audio/snare-roll.mp3');
-  const brassLoaded=page.waitForResponse('**/audio/**/brass-reveal.mp3');
+  const brassLoaded=page.waitForResponse(hasAnthem ? '**/audio/event/brass-reveal-6-9.mp3' : '**/audio/brass-reveal.mp3');
   await page.goto('/layar/doorprize');
   expect((await snareLoaded).ok()).toBe(true);
   expect((await brassLoaded).ok()).toBe(true);
   await expect(page.getByRole('button',{name:/audio|suara/i})).toHaveCount(0);
   await page.locator('.floor-caption').click();
   if(hasAnthem) await expect.poll(async()=>await probe()).toMatchObject({anthemPlaying:true,anthemLoops:true});
-  await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(1);
+  await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0.5);
   started=Date.now();
   await expect(page.locator('.stage-prize-list li')).toHaveCount(5);
   await expect(page.locator('.spatial-slot .slot-prize')).toHaveText(prizes.map(p=>p.name));
-  await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0.35);
+  await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0.1);
   await expect(page.locator('.slot-1')).toHaveClass(/slot-revealed/,{timeout:7000});
   await expect(page.locator('.slot-2 .reel-machine')).toHaveClass(/is-spinning/);
   await expect.poll(async()=> (await probe()).sounds.slice(0,2)).toEqual(['snare','brass']);
   await expect(page.locator('.slot-5')).toHaveClass(/slot-revealed/,{timeout:12000});
-  await expect.poll(async()=> (await probe()).sounds).toEqual(['snare','brass','snare','brass','snare','brass','snare','brass','snare','brass']);
-  await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0.7);
+  await expect.poll(async()=> (await probe()).sounds).toEqual(['snare','brass','brass','brass','brass','brass']);
+  if(hasAnthem){
+    const {brassDurations,peakBrass}=await probe();
+    for(const duration of brassDurations) expect(duration).toBeCloseTo(3,1);
+    expect(peakBrass).toBeGreaterThan(1);
+  }
+  await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0.5);
   expect(await page.locator('.slot-4 .slot-prize').evaluate(node=>node.getBoundingClientRect().bottom)).toBeLessThan(1080);
   await page.reload();
   await expect(page.locator('.slot-revealed')).toHaveCount(5);
@@ -71,6 +85,17 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
   const admin=await page.context().newPage();
   await login(admin);
   await admin.goto('/panitia/doorprize');
+  const standby=admin.getByRole('slider',{name:'Musik saat menunggu'});
+  await expect(standby).toHaveValue('50');
+  await expect(admin.getByRole('slider',{name:'Musik saat undian'})).toHaveValue('10');
+  await expect(admin.getByRole('slider',{name:'Drum roll'})).toHaveValue('90');
+  await expect(admin.getByRole('slider',{name:'Brass saat nama muncul'})).toHaveValue('100');
+  await standby.press('ArrowRight');
+  await admin.getByRole('button',{name:'Simpan volume'}).click();
+  await expect(admin.getByText('Volume tersimpan',{exact:true})).toBeVisible();
+  await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0.51);
+  await admin.reload();
+  await expect(standby).toHaveValue('51');
   await admin.getByRole('button',{name:'Bisukan audio proyektor'}).click();
   await expect(admin.getByRole('button',{name:'Aktifkan audio proyektor'})).toBeVisible();
   await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0);
@@ -82,6 +107,7 @@ async function login(page:Page){await page.goto('/panitia');await page.getByLabe
 test('akses API, whitelist NRP, sumber UTS dan privasi publik',async({request})=>{
  expect((await request.get('/api/admin/state')).status()).toBe(401);
  expect((await request.post('/api/admin/display/audio',{data:{muted:true}})).status()).toBe(401);
+  expect((await request.post('/api/admin/display/audio',{data:{volumes:{standby:75,rolling:10,drum:90,brass:100}}})).status()).toBe(401);
  expect((await request.post('/api/registrations/lookup',{data:{nrp:'999999'}})).status()).toBe(404);
  expect((await request.post('/api/registrations',{data:{nrp:'999999',fullName:'X',partySize:1,requestKey:randomUUID()}})).status()).toBe(404);
  const uts=await(await request.post('/api/registrations/lookup',{data:{nrp:'99000001'}})).json();expect(uts).toMatchObject({doorprizeEligible:false,company:'UTS'});

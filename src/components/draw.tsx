@@ -35,7 +35,7 @@ export function DrawScreen(){
    <header className="public-header stage-header">
      <Brand/><div><Connection error={error}/><FullscreenButton/></div>
    </header>
-   <DrawAudio draws={data?.currentDraws} now={now} muted={data?.audioMuted ?? false}/>
+   <DrawAudio draws={data?.currentDraws} now={now} muted={data?.audioMuted ?? false} volumes={data?.audioVolumes}/>
    {!data ? <main>{error ? <ErrorBox>{error.message}</ErrorBox> : <Loading/>}</main>
      : data.showWinners ? <WinnerFinale draws={data.draws} target={data.event.targetWinners}/>
      : <main className="draw-floor">

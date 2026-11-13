@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { PublicDraw } from '@/lib/types';
+import type { ProjectorVolumes, PublicDraw } from '@/lib/types';
 
 const EVENT_AUDIO = process.env.NEXT_PUBLIC_EVENT_AUDIO === 'true';
 const ANTHEM = '/audio/event/champions-anthem.mp3';
 const DRUM = EVENT_AUDIO ? '/audio/event/drum-roll.mp3' : '/audio/snare-roll.mp3';
-const BRASS = EVENT_AUDIO ? '/audio/event/brass-reveal.mp3' : '/audio/brass-reveal.mp3';
+const BRASS = EVENT_AUDIO ? '/audio/event/brass-reveal-6-9.mp3' : '/audio/brass-reveal.mp3';
+const DEFAULT_VOLUMES: ProjectorVolumes = { standby: 50, rolling: 10, drum: 90, brass: 100 };
 
 async function loadClip(context: AudioContext, path: string) {
   const response = await fetch(path);
@@ -24,12 +25,12 @@ function playClip(context: AudioContext, buffer: AudioBuffer, destination: Audio
   return source;
 }
 
-export function DrawAudio({ draws, now, muted }: { draws?: PublicDraw[]; now: number; muted: boolean }) {
+export function DrawAudio({ draws, now, muted, volumes = DEFAULT_VOLUMES }: { draws?: PublicDraw[]; now: number; muted: boolean; volumes?: ProjectorVolumes }) {
   const audio = useRef<AudioContext | null>(null);
-  const mixer = useRef<{ master: GainNode; music: GainNode; snare: GainNode; musicLevel: number } | null>(null);
+  const mixer = useRef<{ master: GainNode; music: GainNode; snare: GainNode; fanfare: GainNode; musicLevel: number } | null>(null);
   const clips = useRef<{ drum: AudioBuffer; brass: AudioBuffer } | null>(null);
   const drum = useRef<AudioBufferSourceNode | null>(null);
-  const brass = useRef<AudioBufferSourceNode | null>(null);
+  const announcements = useRef(new Set<AudioBufferSourceNode>());
   const seenResults = useRef(new Set<string>());
   const receivedSnapshot = useRef(false);
   const [ready, setReady] = useState(false);
@@ -41,19 +42,25 @@ export function DrawAudio({ draws, now, muted }: { draws?: PublicDraw[]; now: nu
     const master = context.createGain();
     const music = context.createGain();
     const snare = context.createGain();
+    const fanfare = context.createGain();
+    const limiter = context.createDynamicsCompressor();
+    limiter.threshold.value = -3;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
     master.gain.value = 0;
-    music.gain.value = 0.7;
-    snare.gain.value = 0.9;
-    master.connect(context.destination);
+    music.gain.value = 0;
+    master.connect(limiter).connect(context.destination);
     music.connect(master);
     snare.connect(master);
+    fanfare.connect(master);
     const track = EVENT_AUDIO ? new Audio(ANTHEM) : null;
     if (track) {
       track.loop = true;
       context.createMediaElementSource(track).connect(music);
     }
     audio.current = context;
-    mixer.current = { master, music, snare, musicLevel: 0.7 };
+    mixer.current = { master, music, snare, fanfare, musicLevel: 0 };
 
     const resume = () => {
       if (track?.paused) void track.play().catch(() => {});
@@ -86,6 +93,14 @@ export function DrawAudio({ draws, now, muted }: { draws?: PublicDraw[]; now: nu
   }, [hasSnapshot, muted]);
 
   useEffect(() => {
+    const context = audio.current;
+    const mix = mixer.current;
+    if (!context || !mix) return;
+    mix.snare.gain.setTargetAtTime(volumes.drum / 100, context.currentTime, 0.025);
+    mix.fanfare.gain.setTargetAtTime(volumes.brass / 100, context.currentTime, 0.025);
+  }, [volumes.drum, volumes.brass]);
+
+  useEffect(() => {
     if (!draws) return;
     const canPlayNewReveal = receivedSnapshot.current;
     receivedSnapshot.current = true;
@@ -98,36 +113,32 @@ export function DrawAudio({ draws, now, muted }: { draws?: PublicDraw[]; now: nu
       seenResults.current.add(draw.id);
       if (canPlayNewReveal && now - draw.revealAt < 750) announce = true;
     }
-    if (!ready || !context || !mix || !buffers) return;
+    if (!context || !mix) return;
+    const canPlay = ready && buffers && !muted && context.state === 'running';
 
-    if (announce && !muted && context.state === 'running') {
-      drum.current?.stop();
-      drum.current = null;
-      brass.current?.stop();
-      const cue = playClip(context, buffers.brass, mix.master, false);
-      brass.current = cue;
-      cue.addEventListener('ended', () => {
-        if (brass.current === cue) brass.current = null;
-      }, { once: true });
+    if (announce && canPlay) {
+      const cue = playClip(context, buffers.brass, mix.fanfare, false);
+      announcements.current.add(cue);
+      cue.addEventListener('ended', () => announcements.current.delete(cue), { once: true });
     }
 
-    if (rolling && !muted && !brass.current && context.state === 'running') {
+    if (rolling && canPlay) {
       drum.current ??= playClip(context, buffers.drum, mix.snare, true);
     } else if (drum.current) {
       drum.current.stop();
       drum.current = null;
     }
-    if (muted && brass.current) {
-      brass.current.stop();
-      brass.current = null;
+    if (muted) {
+      for (const cue of announcements.current) cue.stop();
+      announcements.current.clear();
     }
 
-    const musicLevel = rolling || brass.current ? 0.35 : 0.7;
+    const musicLevel = (rolling || announcements.current.size > 0 ? volumes.rolling : volumes.standby) / 100;
     if (mix.musicLevel !== musicLevel) {
       mix.musicLevel = musicLevel;
       mix.music.gain.setTargetAtTime(musicLevel, context.currentTime, 0.12);
     }
-  }, [draws, muted, now, ready, rolling]);
+  }, [draws, muted, now, ready, rolling, volumes.standby, volumes.rolling]);
 
   return null;
 }

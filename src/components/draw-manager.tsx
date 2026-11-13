@@ -1,11 +1,18 @@
 'use client';
 import Link from 'next/link';
 import {useState,useRef,useEffect} from 'react';
-import type {AdminState,Draw,DrawResult} from '@/lib/types';
+import type {AdminState,Draw,DrawResult,ProjectorVolumes} from '@/lib/types';
 import {slotPrize} from '@/lib/prizes';
 import {api,ApiError,ErrorBox,Modal,newRequestKey} from './shared';
 import {NameReel,useServerClock} from './reel';
 import {Celebration,notifyNextDraw} from './celebration';
+
+const volumeControls = {
+  standby: 'Musik saat menunggu',
+  rolling: 'Musik saat undian',
+  drum: 'Drum roll',
+  brass: 'Brass saat nama muncul',
+} satisfies Record<keyof ProjectorVolumes, string>;
 
 async function prepareImage(file:File):Promise<string>{
   if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>10000000)throw new Error('Pilih gambar PNG/JPEG/WebP maksimal 10 MB.');
@@ -15,6 +22,11 @@ async function prepareImage(file:File):Promise<string>{
 export function DrawControl({data,refresh}:{data:AdminState;refresh:()=>Promise<unknown>}){
  const now=useServerClock(data.serverTime),[busy,setBusy]=useState(false),[error,setError]=useState(''),[count,setCount]=useState(1),[prizeName,setName]=useState('Door prize'),[prizeImage,setImage]=useState(''),[selected,setSelected]=useState(''),[forfeiting,setForfeiting]=useState<Draw|null>(null),[paused,setPaused]=useState<string|null>(null);
  const [dismissedFinale,setDismissedFinale]=useState('');
+ const [volumeDraft,setVolumeDraft]=useState<Partial<ProjectorVolumes>>({});
+ const [volumeSaved,setVolumeSaved]=useState(false);
+ const volumes={...data.audioVolumes,...volumeDraft};
+ const volumeFields=Object.keys(volumeControls) as (keyof ProjectorVolumes)[];
+ const volumeChanged=volumeFields.some(field=>volumes[field]!==data.audioVolumes[field]);
  const request=useRef<{fingerprint:string;requestKey:string}|null>(null);
  useEffect(()=>{try{request.current=JSON.parse(sessionStorage.getItem('ut-batch-request')||'null');}catch{}},[]);
  const session=data.sessions.find(s=>s.id===selected)||data.sessions.at(-1);
@@ -41,6 +53,27 @@ export function DrawControl({data,refresh}:{data:AdminState;refresh:()=>Promise<
  return <><div className="draw-overview"><span>{data.stats.eligible} peserta tersisa dari Excel awal</span><span>{winners.filter(d=>d.revealAt<=now).length} / {data.event.targetWinners} pemenang</span><Link className="button button-secondary" href="/layar/doorprize" target="_blank">Buka layar proyektor</Link>
    <button type="button" className="button button-secondary button-small" disabled={busy} onClick={()=>void perform(()=>api('/api/admin/display/audio',{muted:!data.audioMuted}))}>{data.audioMuted?'Aktifkan audio proyektor':'Bisukan audio proyektor'}</button>
  </div>
+ <form className="projector-volume pixel-panel" onSubmit={async event=>{
+   event.preventDefault();
+   if(!volumeChanged) return;
+   if(await perform(()=>api('/api/admin/display/audio',{volumes}))){setVolumeDraft({});setVolumeSaved(true);}
+ }}>
+   <h2>Volume proyektor</h2>
+   <fieldset disabled={busy} aria-label="Volume proyektor">
+     {volumeFields.map(field=><div key={field} className="projector-volume-field">
+       <label htmlFor={`projector-volume-${field}`}>{volumeControls[field]}</label>
+       <output htmlFor={`projector-volume-${field}`}>{volumes[field]}%</output>
+       <input id={`projector-volume-${field}`} type="range" min="0" max="100" value={volumes[field]} onChange={event=>{
+         setVolumeDraft({...volumeDraft,[field]:event.currentTarget.valueAsNumber});
+         setVolumeSaved(false);
+       }}/>
+     </div>)}
+   </fieldset>
+   <div className="projector-volume-actions">
+     <button type="submit" className="button button-secondary button-small" disabled={busy||!volumeChanged}>Simpan volume</button>
+     {volumeSaved&&!volumeChanged&&<span role="status">Volume tersimpan</span>}
+   </div>
+ </form>
  {complete&&!spinning&&<div className="finale-control"><strong>Sudah {data.stats.confirmed} pemenang!</strong><button className="button button-primary" disabled={busy} onClick={()=>perform(()=>api('/api/admin/display',{showWinners:true}))}>Tampilkan semua pemenang</button>{data.showWinners&&<button className="button button-secondary" onClick={()=>{setDismissedFinale(signature);void perform(()=>api('/api/admin/display',{showWinners:false}));}}>Kembali ke layar undian</button>}</div>}
  {data.catalogSize ? <div className="batch-config pixel-panel catalog-config">
    <div><h2>{round?.title ?? 'Seluruh hadiah sudah diundi'}</h2><p className="muted">{data.catalogSize - remaining} dari {data.catalogSize} hadiah sudah masuk sesi</p></div>

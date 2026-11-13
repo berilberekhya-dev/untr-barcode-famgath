@@ -18,7 +18,7 @@ async function main() {
     const read = await source.client.transaction('read');
     const write = await target.client.transaction('write');
     try {
-      const singletonTables = ['events', 'display_controls', 'projector_audio'];
+      const singletonTables = ['events', 'display_controls', 'projector_audio', 'projector_audio_levels'];
       for (const table of dataTables.filter(t => !singletonTables.includes(t) && t !== 'app_migrations')) {
         const count = Number((await write.execute(`SELECT COUNT(*) n FROM ${table}`)).rows[0].n);
         if (count) throw new Error('Database tujuan sudah berisi data acara. Migrasi dibatalkan tanpa menimpa data.');

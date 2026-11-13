@@ -56,6 +56,12 @@ export const sqliteMigration = [
   `INSERT OR IGNORE INTO display_controls(id,show_winners) VALUES(1,0)`,
   `CREATE TABLE IF NOT EXISTS projector_audio (id INTEGER PRIMARY KEY CHECK(id=1), muted INTEGER NOT NULL DEFAULT 0 CHECK(muted IN (0,1)))`,
   `INSERT OR IGNORE INTO projector_audio(id,muted) VALUES(1,0)`,
+  `CREATE TABLE IF NOT EXISTS projector_audio_levels (
+    id INTEGER PRIMARY KEY CHECK(id=1), standby INTEGER NOT NULL CHECK(standby BETWEEN 0 AND 100),
+    rolling INTEGER NOT NULL CHECK(rolling BETWEEN 0 AND 100), drum INTEGER NOT NULL CHECK(drum BETWEEN 0 AND 100),
+    brass INTEGER NOT NULL CHECK(brass BETWEEN 0 AND 100)
+  )`,
+  `INSERT OR IGNORE INTO projector_audio_levels(id,standby,rolling,drum,brass) VALUES(1,50,10,90,100)`,
   `CREATE TABLE IF NOT EXISTS roster_seating (nrp TEXT PRIMARY KEY REFERENCES attendance_roster(nrp), table_number TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS registration_seating (registration_id TEXT PRIMARY KEY REFERENCES registrations(id), table_number TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS draw_only_roster (nrp TEXT PRIMARY KEY REFERENCES attendance_roster(nrp))`,
