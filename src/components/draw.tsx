@@ -22,7 +22,12 @@ function WinnerFinale({draws,target}:{draws:PublicDraw[];target:number}){
  </nav>}<p className="finale-tagline">Terbang Melesat, Lanjakke Nian</p></main>;
 }
 export function DrawScreen(){
- const {data,error}=usePoll<DisplayState>('/api/display',true),now=useServerClock(data?.serverTime);
+ const {data,error}=usePoll<DisplayState>('/api/display',true);
+ const [timeline,setTimeline]=useState<{roundStartedAt:number|null;offset:number}|null>(null);
+ const roundStartedAt=data?.drawIntro?.startsAt??null;
+ // Keep one mapping to the browser clock for the whole round, even when polling updates serverTime.
+ if(data&&timeline?.roundStartedAt!==roundStartedAt) setTimeline({roundStartedAt,offset:data.serverTime-performance.now()});
+ const now=useServerClock(data?.serverTime,timeline?.offset);
  const session = data?.currentSession;
  const roundPrizes = session?.prizes ?? data?.nextRound?.prizes;
  const size = session?.size ?? roundPrizes?.length ?? 1;
@@ -35,7 +40,7 @@ export function DrawScreen(){
    <header className="public-header stage-header">
      <Brand/><div><Connection error={error}/><FullscreenButton/></div>
    </header>
-   <DrawAudio draws={data?.currentDraws} intro={data?.drawIntro} now={now} muted={data?.audioMuted ?? false} volumes={data?.audioVolumes}/>
+   <DrawAudio draws={data?.currentDraws} intro={data?.drawIntro} now={now} timelineOffset={timeline?.offset} muted={data?.audioMuted ?? false} volumes={data?.audioVolumes}/>
    {!data ? <main>{error ? <ErrorBox>{error.message}</ErrorBox> : <Loading/>}</main>
      : data.showWinners ? <WinnerFinale draws={data.draws} target={data.event.targetWinners}/>
      : <main className="draw-floor">
@@ -54,7 +59,7 @@ export function DrawScreen(){
            const draw = draws.find(result => result.position === i + 1);
            return <article className={`spatial-slot slot-${i+1}${draw && now >= draw.revealAt ? ' slot-revealed' : ''}`} key={i}>
              {roundPrizes && <span className="slot-number" aria-label={`Slot ${i+1}`}>{i+1}</span>}
-             <NameReel draw={draw} now={now}/>
+             <NameReel draw={draw} now={now} timelineOffset={timeline?.offset}/>
              {roundPrizes && <p className="slot-prize">{session ? slotPrize(session,i+1) : roundPrizes[i].name}</p>}
            </article>;
          })}

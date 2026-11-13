@@ -8,6 +8,9 @@ const ANTHEM = '/audio/event/champions-anthem.mp3';
 const DRUM = EVENT_AUDIO ? '/audio/event/drum-roll.mp3' : '/audio/snare-roll.mp3';
 const BRASS = EVENT_AUDIO ? '/audio/event/brass-reveal-636-900.mp3' : '/audio/brass-reveal.mp3';
 const DEFAULT_VOLUMES: ProjectorVolumes = { standby: 50, rolling: 10, drum: 90, brass: 100 };
+// The event recording's first audible attack starts about 20 ms into the clip.
+const BRASS_ATTACK = EVENT_AUDIO ? 0.02 : 0;
+const COMPRESSOR_DELAY = 0.006;
 
 async function loadClip(context: AudioContext, path: string) {
   const response = await fetch(path);
@@ -23,6 +26,14 @@ function createClip(context: AudioContext, buffer: AudioBuffer, destination: Aud
   return source;
 }
 
+function audioStartAt(context: AudioContext, deadline: number, lead = 0) {
+  const stamp = context.getOutputTimestamp?.();
+  const delay = stamp?.performanceTime && stamp.contextTime !== undefined
+    ? stamp.contextTime + (deadline - stamp.performanceTime) / 1000 - context.currentTime
+    : (deadline - performance.now()) / 1000 - context.baseLatency - (context.outputLatency || 0);
+  return context.currentTime + Math.max(0, delay - lead - COMPRESSOR_DELAY);
+}
+
 function playDrum(context: AudioContext, buffer: AudioBuffer, destination: AudioNode, intro: DrawIntro, now: number) {
   const source = createClip(context, buffer, destination);
   source.loop = true;
@@ -36,12 +47,12 @@ function playDrum(context: AudioContext, buffer: AudioBuffer, destination: Audio
   return source;
 }
 
-export function DrawAudio({ draws, intro, now, muted, volumes = DEFAULT_VOLUMES }: { draws?: PublicDraw[]; intro?: DrawIntro | null; now: number; muted: boolean; volumes?: ProjectorVolumes }) {
+export function DrawAudio({ draws, intro, now, timelineOffset, muted, volumes = DEFAULT_VOLUMES }: { draws?: PublicDraw[]; intro?: DrawIntro | null; now: number; timelineOffset?: number; muted: boolean; volumes?: ProjectorVolumes }) {
   const audio = useRef<AudioContext | null>(null);
   const mixer = useRef<{ master: GainNode; music: GainNode; snare: GainNode; fanfare: GainNode; musicLevel: number } | null>(null);
   const clips = useRef<{ drum: AudioBuffer; brass: AudioBuffer } | null>(null);
   const drum = useRef<{ source: AudioBufferSourceNode; endsAt: number } | null>(null);
-  const announcements = useRef(new Set<AudioBufferSourceNode>());
+  const announcements = useRef(new Map<string, AudioBufferSourceNode>());
   const seenResults = useRef(new Set<string>());
   const receivedSnapshot = useRef(false);
   const [ready, setReady] = useState(false);
@@ -112,37 +123,41 @@ export function DrawAudio({ draws, intro, now, muted, volumes = DEFAULT_VOLUMES 
   }, [volumes.drum, volumes.brass]);
 
   useEffect(() => {
-    if (!draws) return;
-    const canPlayNewReveal = receivedSnapshot.current;
-    receivedSnapshot.current = true;
+    if (!draws || timelineOffset === undefined) return;
     const context = audio.current;
     const mix = mixer.current;
     const buffers = clips.current;
-    let announce = false;
-    for (const draw of draws) {
-      if (draw.revealAt > now || seenResults.current.has(draw.id)) continue;
-      seenResults.current.add(draw.id);
-      if (canPlayNewReveal && now - draw.revealAt < 750) announce = true;
-    }
     if (!context || !mix) return;
+    const serverNow = performance.now() + timelineOffset;
+    const firstSnapshot = !receivedSnapshot.current;
+    receivedSnapshot.current = true;
     const canPlay = ready && buffers && !muted && context.state === 'running';
-    const playingIntro = canPlay && intro && now >= intro.startsAt && now < intro.endsAt;
+    const playingIntro = canPlay && intro && serverNow >= intro.startsAt && serverNow < intro.endsAt;
     if (drum.current && (!playingIntro || drum.current.endsAt !== intro.endsAt)) {
       drum.current.source.stop();
       drum.current = null;
     }
     if (playingIntro && !drum.current) {
-      drum.current = { source: playDrum(context, buffers.drum, mix.snare, intro, now), endsAt: intro.endsAt };
+      drum.current = { source: playDrum(context, buffers.drum, mix.snare, intro, serverNow), endsAt: intro.endsAt };
     }
 
-    if (announce && canPlay) {
-      const cue = createClip(context, buffers.brass, mix.fanfare);
-      announcements.current.add(cue);
-      cue.addEventListener('ended', () => announcements.current.delete(cue), { once: true });
-      cue.start();
+    for (const draw of draws) {
+      const cue = announcements.current.get(draw.id);
+      if (draw.revealAt <= serverNow && (cue || firstSnapshot || !canPlay || serverNow - draw.revealAt > 150)) {
+        seenResults.current.add(draw.id);
+      }
+      if (!canPlay || cue || seenResults.current.has(draw.id)) continue;
+      const nextCue = createClip(context, buffers.brass, mix.fanfare);
+      announcements.current.set(draw.id, nextCue);
+      nextCue.addEventListener('ended', () => {
+        if (announcements.current.get(draw.id) !== nextCue) return;
+        announcements.current.delete(draw.id);
+        seenResults.current.add(draw.id);
+      }, { once: true });
+      nextCue.start(audioStartAt(context, draw.revealAt - timelineOffset, BRASS_ATTACK));
     }
-    if (muted) {
-      for (const cue of announcements.current) cue.stop();
+    if (muted && announcements.current.size) {
+      for (const cue of announcements.current.values()) cue.stop();
       announcements.current.clear();
     }
 
@@ -151,7 +166,7 @@ export function DrawAudio({ draws, intro, now, muted, volumes = DEFAULT_VOLUMES 
       mix.musicLevel = musicLevel;
       mix.music.gain.setTargetAtTime(musicLevel, context.currentTime, 0.12);
     }
-  }, [draws, intro, muted, now, ready, rolling, volumes.standby, volumes.rolling]);
+  }, [draws, intro, muted, now, ready, rolling, timelineOffset, volumes.standby, volumes.rolling]);
 
   return null;
 }

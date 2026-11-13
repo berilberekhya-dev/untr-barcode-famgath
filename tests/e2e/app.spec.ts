@@ -5,12 +5,10 @@ import jsQR from 'jsqr';
 test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali per reveal',async({page})=>{
   await page.setViewportSize({width:1920,height:1080});
   await page.addInitScript(()=>{
-    const probe=window as typeof window & { drawSounds:string[]; audioLevels:number[]; brassDurations:number[]; activeBrass:number; peakBrass:number; anthemLoops:boolean; drumPlaying:boolean; drumLoop:number[] };
+    const probe=window as typeof window & { drawSounds:string[]; audioLevels:number[]; brassCues:{ scheduledAt:number; duration:number; lead:number }[]; anthemLoops:boolean; drumPlaying:boolean; drumLoop:number[] };
     probe.drawSounds=[];
     probe.audioLevels=[];
-    probe.brassDurations=[];
-    probe.activeBrass=0;
-    probe.peakBrass=0;
+    probe.brassCues=[];
     probe.drumPlaying=false;
     probe.drumLoop=[];
     const start=AudioBufferSourceNode.prototype.start;
@@ -22,10 +20,14 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
         this.addEventListener('ended',()=>{probe.drumPlaying=false;},{once:true});
       }
       if(!this.loop && this.buffer){
-        probe.brassDurations.push(this.buffer.duration);
-        probe.activeBrass++;
-        probe.peakBrass=Math.max(probe.peakBrass,probe.activeBrass);
-        this.addEventListener('ended',()=>probe.activeBrass--,{once:true});
+        const context=this.context as AudioContext;
+        const stamp=context.getOutputTimestamp();
+        const when=args[0]??0;
+        const lead=when-context.currentTime;
+        const scheduledAt=stamp.performanceTime&&stamp.contextTime!==undefined
+          ? stamp.performanceTime+(when-stamp.contextTime)*1000
+          : performance.now()+lead*1000;
+        probe.brassCues.push({scheduledAt,duration:this.buffer.duration,lead});
       }
       return start.apply(this,args);
     };
@@ -42,11 +44,14 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
     };
   });
   const probe=()=>page.evaluate(()=>{
-    const state=window as typeof window & {drawSounds:string[];audioLevels:number[];brassDurations:number[];peakBrass:number;anthemLoops:boolean;drumPlaying:boolean;drumLoop:number[]};
-    return { sounds:state.drawSounds.filter(sound=>sound!=='anthem'), levels:state.audioLevels, brassDurations:state.brassDurations, peakBrass:state.peakBrass, anthemPlaying:state.drawSounds.includes('anthem'), anthemLoops:state.anthemLoops, drumPlaying:state.drumPlaying, drumLoop:state.drumLoop };
+    const state=window as typeof window & {drawSounds:string[];audioLevels:number[];brassCues:{scheduledAt:number;duration:number;lead:number}[];anthemLoops:boolean;drumPlaying:boolean;drumLoop:number[]};
+    const reels=Array.from(document.querySelectorAll('.reel-track'),track=>track.getAnimations()[0]);
+    const stops=reels.map(animation=>animation?.startTime==null ? null : Number(animation.startTime)+Number(animation.effect?.getTiming().duration));
+    return { sounds:state.drawSounds.filter(sound=>sound!=='anthem'), levels:state.audioLevels, brassCues:state.brassCues, stops, anthemPlaying:state.drawSounds.includes('anthem'), anthemLoops:state.anthemLoops, drumPlaying:state.drumPlaying, drumLoop:state.drumLoop };
   });
   const hasAnthem=['champions-anthem.mp3','drum-roll.mp3','brass-reveal-636-900.mp3'].every(file=>existsSync(`public/audio/event/${file}`));
   let started: number | undefined;
+  let roundPolls=0;
   const prizes=Array.from({length:5},(_,i)=>({slot:i+1,name:`Hadiah Uji Model ${i+1} dengan nama dan ukuran yang panjang`,grand:false}));
   await page.route('**/api/display',async route=>{
     const {audioMuted,audioVolumes}=await (await page.request.get('/api/display')).json();
@@ -55,7 +60,7 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
       fullName:`Peserta Pengujian ${i+1}`,createdAt:start,revealAt:start+8000+i*2000,
       reelNames:['Peserta Pengujian 1','Peserta Pengujian 2','Peserta Pengujian 3','Peserta Pengujian 4','Peserta Pengujian 5'],reelIndex:i}));
     await route.fulfill({json:{
-    event:{demo:false},serverTime:Date.now(),showWinners:false,audioMuted,audioVolumes,currentDraws:draws,
+    event:{demo:false},serverTime:Date.now()-(start!==undefined && ++roundPolls % 2===0 ? 300 : 0),showWinners:false,audioMuted,audioVolumes,currentDraws:draws,
     drawIntro:start===undefined ? null : {startsAt:start,endsAt:draws[0].revealAt},
     currentSession:{id:'catalog-test',size:5,prizeName:'Door Prize · Ronde 1',prizes},
     }});
@@ -74,6 +79,9 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
   await expect(page.locator('.spatial-slot .slot-prize')).toHaveText(prizes.map(p=>p.name));
   await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0.1);
   await expect.poll(async()=>(await probe()).drumPlaying).toBe(true);
+  await expect.poll(async()=>(await probe()).brassCues.length).toBe(5);
+  await expect.poll(async()=>(await probe()).stops.filter(stop=>stop!==null).length).toBe(5);
+  const initialStops=(await probe()).stops;
   if(hasAnthem){
     const [loopStart,loopEnd,offset,duration]= (await probe()).drumLoop;
     expect(loopStart).toBeCloseTo(4.56);
@@ -86,11 +94,13 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
   await expect.poll(async()=> (await probe()).sounds.slice(0,2)).toEqual(['snare','brass']);
   await expect(page.locator('.slot-5')).toHaveClass(/slot-revealed/,{timeout:12000});
   await expect.poll(async()=> (await probe()).sounds).toEqual(['snare','brass','brass','brass','brass','brass']);
-  expect((await probe()).drumPlaying).toBe(false);
-  if(hasAnthem){
-    const {brassDurations,peakBrass}=await probe();
-    for(const duration of brassDurations) expect(duration).toBeCloseTo(2.64,1);
-    expect(peakBrass).toBeGreaterThan(1);
+  const afterReveal=await probe();
+  expect(afterReveal.drumPlaying).toBe(false);
+  expect(afterReveal.stops).toEqual(initialStops);
+  for(const [i,cue] of afterReveal.brassCues.entries()){
+    expect(cue.lead).toBeGreaterThan(1);
+    expect(Math.abs(cue.scheduledAt+(hasAnthem?26:6)-afterReveal.stops[i]!)).toBeLessThan(45);
+    if(hasAnthem) expect(cue.duration).toBeCloseTo(2.64,1);
   }
   await expect.poll(async()=>(await probe()).levels.at(-1)).toBe(0.5);
   expect(await page.locator('.slot-4 .slot-prize').evaluate(node=>node.getBoundingClientRect().bottom)).toBeLessThan(1080);
