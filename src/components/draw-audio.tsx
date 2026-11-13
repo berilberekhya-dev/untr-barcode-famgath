@@ -3,93 +3,102 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PublicDraw } from '@/lib/types';
 
-function playSnare(context: AudioContext, at: number, noise: AudioBuffer) {
+async function loadClip(context: AudioContext, path: string) {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error('Rekaman tidak tersedia');
+  return context.decodeAudioData(await response.arrayBuffer());
+}
+
+function playClip(context: AudioContext, buffer: AudioBuffer, loop: boolean) {
   const source = context.createBufferSource();
-  const filter = context.createBiquadFilter();
-  const gain = context.createGain();
-  source.buffer = noise;
-  filter.type = 'bandpass';
-  filter.frequency.value = 1850;
-  gain.gain.setValueAtTime(0.17, at);
-  gain.gain.exponentialRampToValueAtTime(0.001, at + 0.08);
-  source.connect(filter).connect(gain).connect(context.destination);
-  source.start(at);
-  source.stop(at + 0.085);
+  source.buffer = buffer;
+  source.loop = loop;
+  source.connect(context.destination);
+  source.addEventListener('ended', () => source.disconnect(), { once: true });
+  source.start();
+  return source;
 }
 
-function playFanfare(context: AudioContext) {
-  [523.25, 659.25, 783.99, 1046.5].forEach((frequency, index) => {
-    const at = context.currentTime + index * 0.095;
-    const tone = context.createOscillator();
-    const gain = context.createGain();
-    tone.type = 'triangle';
-    tone.frequency.value = frequency;
-    gain.gain.setValueAtTime(0.001, at);
-    gain.gain.linearRampToValueAtTime(0.16, at + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.36);
-    tone.connect(gain).connect(context.destination);
-    tone.start(at);
-    tone.stop(at + 0.37);
-  });
-}
-
-export function DrawAudio({ draws, now }: { draws: PublicDraw[]; now: number }) {
+export function DrawAudio({ draws, now }: { draws?: PublicDraw[]; now: number }) {
   const audio = useRef<AudioContext | null>(null);
-  const noise = useRef<AudioBuffer | null>(null);
-  const heard = useRef(new Set<string>());
-  const lastTick = useRef(0);
+  const clips = useRef<{ drum: AudioBuffer; brass: AudioBuffer } | null>(null);
+  const drum = useRef<AudioBufferSourceNode | null>(null);
+  const brass = useRef<AudioBufferSourceNode | null>(null);
+  const seenResults = useRef(new Set<string>());
+  const receivedSnapshot = useRef(false);
   const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const rolling = draws.some(draw => now < draw.revealAt);
-  const newest = draws.filter(draw => now >= draw.revealAt).sort((a, b) => b.revealAt - a.revealAt)[0];
 
   useEffect(() => {
-    if (!newest || heard.current.has(newest.id)) return;
-    heard.current.add(newest.id);
-    if (enabled && audio.current?.state === 'running' && now - newest.revealAt < 750) {
-      playFanfare(audio.current);
+    if (!draws) return;
+    const canPlayNewReveal = receivedSnapshot.current;
+    receivedSnapshot.current = true;
+    const context = audio.current;
+    const ready = enabled && context?.state === 'running' && clips.current;
+    let announce = false;
+    for (const draw of draws) {
+      if (draw.revealAt > now || seenResults.current.has(draw.id)) continue;
+      seenResults.current.add(draw.id);
+      if (canPlayNewReveal && now - draw.revealAt < 750) announce = true;
     }
-  }, [newest?.id, enabled, now]);
+    if (!ready) return;
 
-  const gapAfterReveal = Boolean(newest && now - newest.revealAt < 650);
-  useEffect(() => {
-    if (!enabled || !rolling || gapAfterReveal) return;
-    const timer = window.setInterval(() => {
-      const context = audio.current;
-      if (!context || context.state !== 'running' || !noise.current) return;
-      if (context.currentTime - lastTick.current < 0.085) return;
-      lastTick.current = context.currentTime;
-      playSnare(context, context.currentTime, noise.current);
-    }, 95);
-    return () => window.clearInterval(timer);
-  }, [enabled, rolling, gapAfterReveal]);
+    if (announce) {
+      drum.current?.stop();
+      drum.current = null;
+      brass.current?.stop();
+      const cue = playClip(context, ready.brass, false);
+      brass.current = cue;
+      cue.addEventListener('ended', () => {
+        if (brass.current === cue) brass.current = null;
+      }, { once: true });
+    }
+
+    const rolling = draws.some(draw => draw.revealAt > now);
+    if (rolling && !brass.current) {
+      drum.current ??= playClip(context, ready.drum, true);
+    } else {
+      drum.current?.stop();
+      drum.current = null;
+    }
+  }, [draws, enabled, now]);
 
   useEffect(() => () => { void audio.current?.close(); }, []);
 
   async function toggle() {
     setError('');
+    setLoading(true);
     try {
       if (enabled) {
+        drum.current?.stop();
+        brass.current?.stop();
+        drum.current = null;
+        brass.current = null;
         setEnabled(false);
         await audio.current?.suspend();
-        return;
+      } else {
+        const context = audio.current ??= new AudioContext();
+        const [buffers] = await Promise.all([
+          clips.current ?? Promise.all([
+            loadClip(context, '/audio/snare-roll.mp3'),
+            loadClip(context, '/audio/brass-reveal.mp3'),
+          ]).then(([drum, brass]) => ({ drum, brass })),
+          context.resume(),
+        ]);
+        clips.current = buffers;
+        setEnabled(true);
       }
-      if (!audio.current) {
-        audio.current = new AudioContext();
-        noise.current = audio.current.createBuffer(1, Math.ceil(audio.current.sampleRate * 0.09), audio.current.sampleRate);
-        const samples = noise.current.getChannelData(0);
-        for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
-      }
-      await audio.current.resume();
-      setEnabled(true);
     } catch {
       setError('Suara belum aktif. Coba tekan tombol lagi.');
+    } finally {
+      setLoading(false);
     }
   }
 
   return <div className="draw-audio">
-    <button type="button" className="button button-secondary button-small" onClick={() => void toggle()}>
-      {enabled ? 'Bisukan suara' : 'Aktifkan suara'}
+    <button type="button" className="button button-secondary button-small" disabled={loading} onClick={() => void toggle()}>
+      {loading ? 'Menyiapkan suara…' : enabled ? 'Bisukan suara' : 'Aktifkan suara'}
     </button>
     {error && <small role="status">{error}</small>}
   </div>;

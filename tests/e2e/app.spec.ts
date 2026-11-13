@@ -4,14 +4,15 @@ import jsQR from 'jsqr';
 test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali per reveal',async({page})=>{
   await page.setViewportSize({width:1920,height:1080});
   await page.addInitScript(()=>{
-    const probe=window as typeof window & { tones:number; snares:number };
-    probe.tones=0;
-    probe.snares=0;
-    const osc=AudioContext.prototype.createOscillator;
-    const buffer=AudioContext.prototype.createBufferSource;
-    AudioContext.prototype.createOscillator=function(){probe.tones++;return osc.call(this);};
-    AudioContext.prototype.createBufferSource=function(){probe.snares++;return buffer.call(this);};
+    const probe=window as typeof window & { drawSounds:string[] };
+    probe.drawSounds=[];
+    const start=AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start=function(...args){
+      probe.drawSounds.push(this.loop ? 'snare' : 'brass');
+      return start.apply(this,args);
+    };
   });
+  const sounds=()=>page.evaluate(()=>(window as typeof window & {drawSounds:string[]}).drawSounds);
   const started=Date.now()+1000;
   const prizes=Array.from({length:5},(_,i)=>({slot:i+1,name:`Hadiah Uji Model ${i+1} dengan nama dan ukuran yang panjang`,grand:false}));
   const draws=prizes.map((_,i)=>({id:`catalog-test-${i}`,status:'confirmed',position:i+1,
@@ -22,19 +23,25 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
     currentSession:{id:'catalog-test',size:5,prizeName:'Door Prize · Ronde 1',prizes},
   }}));
   await page.goto('/layar/doorprize');
+  const snareLoaded=page.waitForResponse('**/audio/snare-roll.mp3');
+  const brassLoaded=page.waitForResponse('**/audio/brass-reveal.mp3');
   await page.getByRole('button',{name:'Aktifkan suara'}).click();
+  expect((await snareLoaded).ok()).toBe(true);
+  expect((await brassLoaded).ok()).toBe(true);
+  await expect(page.getByRole('button',{name:'Bisukan suara'})).toBeEnabled();
   await expect(page.locator('.stage-prize-list li')).toHaveCount(5);
   await expect(page.locator('.spatial-slot .slot-prize')).toHaveText(prizes.map(p=>p.name));
   await expect(page.locator('.slot-1')).toHaveClass(/slot-revealed/,{timeout:7000});
   await expect(page.locator('.slot-2 .reel-machine')).toHaveClass(/is-spinning/);
+  await expect.poll(async()=> (await sounds()).slice(0,2)).toEqual(['snare','brass']);
   await expect(page.locator('.slot-5')).toHaveClass(/slot-revealed/,{timeout:12000});
-  await expect.poll(()=>page.evaluate(()=>(window as typeof window & {tones:number}).tones)).toBe(20);
-  expect(await page.evaluate(()=>(window as typeof window & {snares:number}).snares)).toBeGreaterThan(0);
+  await expect.poll(sounds).toEqual(['snare','brass','snare','brass','snare','brass','snare','brass','snare','brass']);
   expect(await page.locator('.slot-4 .slot-prize').evaluate(node=>node.getBoundingClientRect().bottom)).toBeLessThan(1080);
   await page.reload();
   await expect(page.locator('.slot-revealed')).toHaveCount(5);
   await page.getByRole('button',{name:'Aktifkan suara'}).click();
-  expect(await page.evaluate(()=>(window as typeof window & {tones:number}).tones)).toBe(0);
+  await expect(page.getByRole('button',{name:'Bisukan suara'})).toBeEnabled();
+  expect(await sounds()).toEqual([]);
 });
 async function login(page:Page){await page.goto('/panitia');await page.getByLabel('Password panitia').fill('e2e-space-password');await page.getByRole('button',{name:'Masuk ke pusat kendali'}).click();await expect(page.getByRole('heading',{name:'Selamat datang, kapten!'})).toBeVisible();}
 test('akses API, whitelist NRP, sumber UTS dan privasi publik',async({request})=>{

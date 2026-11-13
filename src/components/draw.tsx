@@ -33,7 +33,7 @@ export function DrawScreen(){
  return <div className="public-page stage-page spatial-stage">
    <SpaceBackdrop/><DemoBanner demo={data?.event.demo}/>
    <header className="public-header stage-header">
-     <Brand/><div><Connection error={error}/><DrawAudio draws={draws} now={now}/><FullscreenButton/></div>
+     <Brand/><div><Connection error={error}/><DrawAudio draws={data?.currentDraws} now={now}/><FullscreenButton/></div>
    </header>
    {!data ? <main>{error ? <ErrorBox>{error.message}</ErrorBox> : <Loading/>}</main>
      : data.showWinners ? <WinnerFinale draws={data.draws} target={data.event.targetWinners}/>
