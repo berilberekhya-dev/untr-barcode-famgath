@@ -20,7 +20,7 @@ export async function api<T>(url: string, body?: unknown, method = 'POST'): Prom
   if (!response.ok) throw new ApiError(result.error || 'Permintaan belum berhasil.', response.status, result);
   return result;
 }
-export function usePoll<T>(url: string) {
+export function usePoll<T>(url: string, pollInBackground = false) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<ApiError | Error | null>(null);
   const mounted = useRef(true);
@@ -36,11 +36,11 @@ export function usePoll<T>(url: string) {
   useEffect(() => {
     mounted.current = true;
     void refresh();
-    const timer = setInterval(() => { if (!document.hidden) void refresh(); }, 2000);
+    const timer = setInterval(() => { if (pollInBackground || !document.hidden) void refresh(); }, 2000);
     const focus = () => { if (!document.hidden) void refresh(); };
     document.addEventListener('visibilitychange', focus);
     return () => { mounted.current = false; clearInterval(timer); document.removeEventListener('visibilitychange', focus); };
-  }, [refresh]);
+  }, [refresh, pollInBackground]);
   return { data, error, refresh };
 }
 export function Brand({ compact = false }: { compact?: boolean }) {

@@ -42,6 +42,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (action.join('/') === 'registrations') return service.register(body, true);
     if (action.join('/') === 'draw') return service.draw(body);
     if (action.join('/') === 'display') { await service.setWinnerDisplay(body); return {ok:true}; }
+    if (action.join('/') === 'display/audio') { await service.setProjectorAudio(body); return {ok:true}; }
     if (action.join('/') === 'coupons/transfer') { await service.transferCoupons(body); return {ok:true}; }
     if (action.length === 3 && action[0] === 'draws' && action[2] === 'forfeit') { await service.forfeit(action[1]); return { ok: true }; }
     if (action.length === 3 && action[0] === 'draws' && action[2] === 'received') { await service.markReceived(action[1], body); return { ok: true }; }

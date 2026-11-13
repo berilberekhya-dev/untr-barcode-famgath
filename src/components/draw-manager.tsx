@@ -38,7 +38,9 @@ export function DrawControl({data,refresh}:{data:AdminState;refresh:()=>Promise<
    try{const result=await api<DrawResult>('/api/admin/draw',{...payload,requestKey:request.current.requestKey});setSelected(result.session.id);request.current=null;try{sessionStorage.removeItem('ut-batch-request');}catch{}}
    catch(e){if(e instanceof ApiError&&e.status<500){request.current=null;try{sessionStorage.removeItem('ut-batch-request');}catch{}setPaused(null);notifyNextDraw(latestWinner?.id||null,false);}throw e;}
  });
- return <><div className="draw-overview"><span>{data.stats.eligible} peserta tersisa dari Excel awal</span><span>{winners.filter(d=>d.revealAt<=now).length} / {data.event.targetWinners} pemenang</span><Link className="button button-secondary" href="/layar/doorprize" target="_blank">Buka layar proyektor</Link></div>
+ return <><div className="draw-overview"><span>{data.stats.eligible} peserta tersisa dari Excel awal</span><span>{winners.filter(d=>d.revealAt<=now).length} / {data.event.targetWinners} pemenang</span><Link className="button button-secondary" href="/layar/doorprize" target="_blank">Buka layar proyektor</Link>
+   <button type="button" className="button button-secondary button-small" disabled={busy} onClick={()=>void perform(()=>api('/api/admin/display/audio',{muted:!data.audioMuted}))}>{data.audioMuted?'Aktifkan audio proyektor':'Bisukan audio proyektor'}</button>
+ </div>
  {complete&&!spinning&&<div className="finale-control"><strong>Sudah {data.stats.confirmed} pemenang!</strong><button className="button button-primary" disabled={busy} onClick={()=>perform(()=>api('/api/admin/display',{showWinners:true}))}>Tampilkan semua pemenang</button>{data.showWinners&&<button className="button button-secondary" onClick={()=>{setDismissedFinale(signature);void perform(()=>api('/api/admin/display',{showWinners:false}));}}>Kembali ke layar undian</button>}</div>}
  {data.catalogSize ? <div className="batch-config pixel-panel catalog-config">
    <div><h2>{round?.title ?? 'Seluruh hadiah sudah diundi'}</h2><p className="muted">{data.catalogSize - remaining} dari {data.catalogSize} hadiah sudah masuk sesi</p></div>

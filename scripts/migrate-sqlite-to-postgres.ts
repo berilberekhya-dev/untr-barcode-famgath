@@ -18,7 +18,8 @@ async function main() {
     const read = await source.client.transaction('read');
     const write = await target.client.transaction('write');
     try {
-      for (const table of dataTables.filter(t => !['events', 'display_controls', 'app_migrations'].includes(t))) {
+      const singletonTables = ['events', 'display_controls', 'projector_audio'];
+      for (const table of dataTables.filter(t => !singletonTables.includes(t) && t !== 'app_migrations')) {
         const count = Number((await write.execute(`SELECT COUNT(*) n FROM ${table}`)).rows[0].n);
         if (count) throw new Error('Database tujuan sudah berisi data acara. Migrasi dibatalkan tanpa menimpa data.');
       }
@@ -29,7 +30,7 @@ async function main() {
           const columns = Object.keys(row);
           const query = `INSERT INTO ${table}(${columns.join(',')}) VALUES(${columns.map(() => '?').join(',')})`;
           if (table === 'app_migrations') await write.execute({ sql: query + ' ON CONFLICT DO NOTHING', args: Object.values(row) as SqlValue[] });
-          else if (table === 'events' || table === 'display_controls') {
+          else if (singletonTables.includes(table)) {
             const fields = columns.filter(c => c !== 'id');
             await write.execute({ sql: `UPDATE ${table} SET ${fields.map(c => `${c}=?`).join(',')} WHERE id=1`, args: fields.map(c => row[c]) as SqlValue[] });
           } else await write.execute({ sql: query, args: Object.values(row) as SqlValue[] });

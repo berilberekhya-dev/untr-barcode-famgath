@@ -54,6 +54,8 @@ export const sqliteMigration = [
   `CREATE UNIQUE INDEX IF NOT EXISTS prize_position_filled ON prize_draws(session_id,position) WHERE status='confirmed'`,
   `CREATE TABLE IF NOT EXISTS display_controls (id INTEGER PRIMARY KEY CHECK(id=1), show_winners INTEGER NOT NULL DEFAULT 0)`,
   `INSERT OR IGNORE INTO display_controls(id,show_winners) VALUES(1,0)`,
+  `CREATE TABLE IF NOT EXISTS projector_audio (id INTEGER PRIMARY KEY CHECK(id=1), muted INTEGER NOT NULL DEFAULT 0 CHECK(muted IN (0,1)))`,
+  `INSERT OR IGNORE INTO projector_audio(id,muted) VALUES(1,0)`,
   `CREATE TABLE IF NOT EXISTS roster_seating (nrp TEXT PRIMARY KEY REFERENCES attendance_roster(nrp), table_number TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS registration_seating (registration_id TEXT PRIMARY KEY REFERENCES registrations(id), table_number TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS draw_only_roster (nrp TEXT PRIMARY KEY REFERENCES attendance_roster(nrp))`,

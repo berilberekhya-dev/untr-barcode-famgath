@@ -8,6 +8,7 @@ test-results/
 *.tsbuildinfo
 coverage/
 .vercel/
+/public/audio/event/
 .codex/
 .agents/
 *.db

@@ -234,14 +234,14 @@ export class GatheringService {
   async state(registrationUrl:string):Promise<AdminState> {
     await this.storage.ready(); const tx=await this.storage.client.transaction('read');
     try {
-      const [ev,regs,rs,ss,ds,controls,prizes,links]=await tx.batch(['SELECT * FROM events WHERE id=1',registrationSQL+' ORDER BY r.created_at DESC,r.id',adminRosterSQL,'SELECT * FROM prize_sessions ORDER BY created_at,id','SELECT * FROM prize_draws ORDER BY created_at,session_id,position,id','SELECT show_winners FROM display_controls WHERE id=1','SELECT * FROM prize_catalog ORDER BY slot','SELECT * FROM prize_session_catalog']);
+      const [ev,regs,rs,ss,ds,controls,prizes,links]=await tx.batch(['SELECT * FROM events WHERE id=1',registrationSQL+' ORDER BY r.created_at DESC,r.id',adminRosterSQL,'SELECT * FROM prize_sessions ORDER BY created_at,id','SELECT * FROM prize_draws ORDER BY created_at,session_id,position,id','SELECT show_winners,muted FROM display_controls JOIN projector_audio USING(id) WHERE id=1','SELECT * FROM prize_catalog ORDER BY slot','SELECT * FROM prize_session_catalog']);
       const catalog = prizes.rows.map(catalogRow);
       const linked = new Set(links.rows.map(row => row.session_id));
       const sessions = ss.rows.map(sessionRow).map(session => linked.has(session.id) ? withCatalog(session, catalog) : session);
       const nextRound = upcomingRound(catalog, sessions.reduce((n, session) => n + session.size, 0));
       const e=ev.rows[0], registrations=regs.rows.map(registrationRow),roster=rs.rows.map(rosterRow),draws=ds.rows.map(drawRow);
       const selected=new Set(draws.map(d=>d.rosterId)); await tx.commit();
-      return {serverTime:this.now(),event:{id:1,title:String(e.title),date:String(e.date),venue:String(e.venue),targetWinners:Number(e.target_winners),registrationOpen:Boolean(e.registration_open),demo:Boolean(e.demo)},registrations,roster,sessions,draws,registrationUrl,showWinners:Boolean(controls.rows[0].show_winners),catalogSize:catalog.length,nextRound,
+      return {serverTime:this.now(),event:{id:1,title:String(e.title),date:String(e.date),venue:String(e.venue),targetWinners:Number(e.target_winners),registrationOpen:Boolean(e.registration_open),demo:Boolean(e.demo)},registrations,roster,sessions,draws,registrationUrl,showWinners:Boolean(controls.rows[0].show_winners),audioMuted:Boolean(controls.rows[0].muted),catalogSize:catalog.length,nextRound,
         stats:{employees:registrations.length,people:registrations.reduce((n,r)=>n+r.partySize,0),eligible:roster.filter(r=>r.source==='excel'&&r.drawEnabled&&!selected.has(r.id)).length,confirmed:draws.filter(d=>d.status==='confirmed').length,received:draws.filter(d=>d.receivedAt!=null).length,plannedPeople:roster.reduce((n,r)=>n+r.plannedSize,0),surplus:registrations.reduce((n,r)=>n+Math.max(0,r.plannedSize-r.partySize-r.transferredOut),0),shortage:registrations.reduce((n,r)=>n+Math.max(0,r.partySize-r.couponCount),0),couponCount:registrations.reduce((n,r)=>n+r.couponCount,0)}};
     } finally {tx.close();}
   }
@@ -250,7 +250,11 @@ export class GatheringService {
     const publicDraws=s.draws.filter(d=>d.status==='confirmed').map(({nrp:_,rosterId:__,requestKey:___,...d})=>({...d,prizeName:slotPrize(s.sessions.find(p=>p.id===d.sessionId),d.position)}));
     const last=s.draws.at(-1); const currentSession=s.sessions.find(p=>p.id===last?.sessionId)||null;
     const currentDraws=currentSession?publicDraws.filter(d=>d.sessionId===currentSession.id):[];
-    return {event:s.event,registrationUrl,serverTime:s.serverTime,names:s.roster.filter(r=>r.source==='excel'&&r.drawEnabled&&!s.draws.some(d=>d.rosterId===r.id)).map(r=>r.fullName),draws:publicDraws,active:publicDraws.find(d=>d.revealAt>this.now())||null,currentDraw:currentDraws.at(-1)||null,currentSession,currentDraws,confirmedCount:s.stats.confirmed,eligibleCount:s.stats.eligible,showWinners:s.showWinners&&s.stats.confirmed>=s.event.targetWinners,nextRound:currentSession?undefined:s.nextRound};
+    return {event:s.event,registrationUrl,serverTime:s.serverTime,names:s.roster.filter(r=>r.source==='excel'&&r.drawEnabled&&!s.draws.some(d=>d.rosterId===r.id)).map(r=>r.fullName),draws:publicDraws,active:publicDraws.find(d=>d.revealAt>this.now())||null,currentDraw:currentDraws.at(-1)||null,currentSession,currentDraws,confirmedCount:s.stats.confirmed,eligibleCount:s.stats.eligible,showWinners:s.showWinners&&s.stats.confirmed>=s.event.targetWinners,audioMuted:s.audioMuted,nextRound:currentSession?undefined:s.nextRound};
+  }
+  async setProjectorAudio(input: unknown) {
+    const { muted } = z.object({ muted: z.boolean() }).parse(input);
+    await this.write(tx => tx.execute({ sql: 'UPDATE projector_audio SET muted=? WHERE id=1', args: [Number(muted)] }));
   }
   async setWinnerDisplay(input:unknown){
     const {showWinners}=z.object({showWinners:z.boolean()}).parse(input);

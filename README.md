@@ -11,6 +11,8 @@ Aplikasi check-in melalui QR, pengelolaan kehadiran dan kupon, serta undian door
 - Undian satu sampai lima peserta sekaligus, gambar/nama hadiah, pengguguran, penggantian slot dalam sesi yang sama, dan pencatatan hadiah yang sudah diambil.
 - Pemilihan memakai Node.js crypto.randomInt tanpa bobot tersembunyi atau peserta berulang. Hasil disimpan dalam transaksi sebelum animasi gulungan nama.
 - Layar proyektor menampilkan hadiah dan gulungan serentak. Rekap seluruh pemenang dibuka panitia setelah target terpenuhi.
+- Kontrol bisu ada di `/panitia/doorprize`. Jika browser menahan autoplay, klik **Layar penuh** sekali di layar proyektor untuk memulai audio.
+- Untuk audio khusus acara, sediakan `champions-anthem.mp3`, `drum-roll.mp3`, dan `brass-reveal.mp3` di `public/audio/event/` sebelum build. Folder ini diabaikan oleh Git dan ikut dalam deployment melalui Vercel CLI. Build tanpa ketiga file memakai klip CC0 di `public/audio/`.
 - Ekspor PDF A4 landscape, polling dua detik, font lokal, navigasi keyboard, dan dukungan pengurangan animasi.
 
 ## Stack

@@ -22,7 +22,7 @@ function WinnerFinale({draws,target}:{draws:PublicDraw[];target:number}){
  </nav>}<p className="finale-tagline">Terbang Melesat, Lanjakke Nian</p></main>;
 }
 export function DrawScreen(){
- const {data,error}=usePoll<DisplayState>('/api/display'),now=useServerClock(data?.serverTime);
+ const {data,error}=usePoll<DisplayState>('/api/display',true),now=useServerClock(data?.serverTime);
  const session = data?.currentSession;
  const roundPrizes = session?.prizes ?? data?.nextRound?.prizes;
  const size = session?.size ?? roundPrizes?.length ?? 1;
@@ -33,8 +33,9 @@ export function DrawScreen(){
  return <div className="public-page stage-page spatial-stage">
    <SpaceBackdrop/><DemoBanner demo={data?.event.demo}/>
    <header className="public-header stage-header">
-     <Brand/><div><Connection error={error}/><DrawAudio draws={data?.currentDraws} now={now}/><FullscreenButton/></div>
+     <Brand/><div><Connection error={error}/><FullscreenButton/></div>
    </header>
+   <DrawAudio draws={data?.currentDraws} now={now} muted={data?.audioMuted ?? false}/>
    {!data ? <main>{error ? <ErrorBox>{error.message}</ErrorBox> : <Loading/>}</main>
      : data.showWinners ? <WinnerFinale draws={data.draws} target={data.event.targetWinners}/>
      : <main className="draw-floor">
