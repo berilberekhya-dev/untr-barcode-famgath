@@ -16,6 +16,7 @@ export function AdminApp({ doorprize = false, initialSection = 'overview' }: { d
   const [section, setSection] = useState<'overview' | 'participants' | 'settings' | 'roster'>(initialSection);
   const [modal, setModal] = useState<'add' | Registration | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportingAttendance, setExportingAttendance] = useState(false);
   const [notice, setNotice] = useState('');
   const router = useRouter();
   if (error instanceof ApiError && error.status === 401) return <Login />;
@@ -27,6 +28,20 @@ export function AdminApp({ doorprize = false, initialSection = 'overview' }: { d
       const doc = await buildReport(state); doc.save(`UT-Palembang-${state.event.demo ? 'demo-' : ''}laporan-${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (e) { setNotice((e as Error).message); }
     finally { setExporting(false); }
+  };
+  const exportAttendance = async () => {
+    setExportingAttendance(true); setNotice('');
+    try {
+      const response = await fetch('/api/admin/export/attendance', { cache: 'no-store' });
+      if (!response.ok) throw new Error((await response.json()).error || 'Data absen belum bisa diekspor.');
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] || 'Absen-UT-Palembang.xlsx';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setNotice((e as Error).message); }
+    finally { setExportingAttendance(false); }
   };
   return <div className="admin-app">
     <aside className="sidebar"><Brand compact /><div className="sidebar-divider" /><span className="nav-label">PUSAT KENDALI</span>
@@ -54,7 +69,8 @@ export function AdminApp({ doorprize = false, initialSection = 'overview' }: { d
               { label: 'Pemenang', value: `${data.stats.confirmed} / ${data.event.targetWinners}`, icon: 'trophy', color: 'pink', detail: `${data.stats.received} hadiah sudah diambil` },
             ].map(stat => <div className="stat-card" key={stat.label}><div className={`stat-icon ${stat.color}`}><Icon name={stat.icon} /></div><span>{stat.label}</span><strong>{stat.value}</strong><small>{stat.detail}</small></div>)}</div>
           </>}
-          <CouponAdmin data={data} refresh={refresh}/><ParticipantTable data={data} onEdit={setModal} onAdd={() => setModal('add')} />
+          <CouponAdmin data={data} refresh={refresh}/><ParticipantTable data={data} onEdit={setModal} onAdd={() => setModal('add')}
+            onExportAttendance={exportAttendance} exportingAttendance={exportingAttendance} />
           <div className="admin-bottom-note"><span><span className="tiny-square" />Data tersimpan otomatis</span><span>PALEMBANG · WIB (UTC+7)</span></div>
         </>}
       </main>
@@ -63,13 +79,18 @@ export function AdminApp({ doorprize = false, initialSection = 'overview' }: { d
   </div>;
 }
 
-function ParticipantTable({ data, onEdit, onAdd }: { data: AdminState; onEdit: (r: Registration) => void; onAdd: () => void }) {
+function ParticipantTable({ data, onEdit, onAdd, onExportAttendance, exportingAttendance }: {
+  data: AdminState; onEdit: (r: Registration) => void; onAdd: () => void; onExportAttendance: () => void; exportingAttendance: boolean;
+}) {
   const [search, setSearch] = useState(''); const [page, setPage] = useState(0);
   const rows = data.registrations.filter(r => `${r.nrp} ${r.fullName}`.toLowerCase().includes(search.toLowerCase()));
   const safePage = Math.min(page, Math.max(0, Math.ceil(rows.length / 8) - 1));
   const visible = rows.slice(safePage * 8, safePage * 8 + 8);
   const drawn = new Map(data.draws.map(d => [d.nrp, d]));
-  return <section className="table-panel"><div className="table-heading"><div><h2>Daftar peserta <span className="count-badge">{data.stats.employees}</span></h2><p className="muted">Keluarga besar yang siap menjelajah bersama.</p></div><button className="button button-primary button-small" onClick={onAdd}><Icon name="plus" size={17} />Tambah peserta</button></div>
+  return <section className="table-panel"><div className="table-heading attendance-heading"><div><h2>Daftar peserta <span className="count-badge">{data.stats.employees}</span></h2><p className="muted">Keluarga besar yang siap menjelajah bersama.</p></div><div className="page-actions">
+    <button className="button button-secondary button-small" disabled={exportingAttendance} onClick={onExportAttendance}><Icon name="download" size={17} />{exportingAttendance ? 'Menyiapkan Excel…' : 'Ekspor absen Excel'}</button>
+    <button className="button button-primary button-small" onClick={onAdd}><Icon name="plus" size={17} />Tambah peserta</button>
+  </div></div>
     <div className="table-toolbar"><div className="input-icon search-input"><Icon name="search" size={18} /><input aria-label="Cari nama atau NRP" placeholder="Cari nama atau NRP…" value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} /></div><span className="table-live"><i />Diperbarui otomatis</span></div>
     <div className="table-scroll"><table><thead><tr><th>NO.</th><th>NAMA PESERTA / NRP</th><th>KELUARGA / HADIR / KUPON / KURSI</th><th>MEJA</th><th>REGISTRASI</th><th>DOOR PRIZE</th><th><span className="sr-only">Tindakan</span></th></tr></thead><tbody>
       {visible.map((r, i) => { const draw = drawn.get(r.nrp); const canDraw=data.roster.some(p=>p.nrp===r.nrp&&p.source==='excel'&&p.drawEnabled); return <tr key={r.id}><td className="row-number">{String(safePage * 8 + i + 1).padStart(2, '0')}</td><td><div className="participant-name"><span className={`name-avatar avatar-${i % 4}`}>{r.fullName.split(' ').map(s => s[0]).slice(0, 2).join('')}</span><div><strong>{r.fullName}</strong><small className="mono">{r.nrp}</small></div></div></td><td><span className="party-count"><Icon name="people" size={15} />{r.plannedSize} / {r.partySize} / {r.couponCount} / {r.seatCount}</span><small className="table-subtext">{r.partySize>r.plannedSize?`Lebih ${r.partySize-r.plannedSize}`:r.partySize<r.plannedSize?`Kurang ${r.plannedSize-r.partySize}`:"Sesuai rencana"} · {r.company}</small></td><td>{r.tableNumber||"—"}</td><td className="muted">{formatTime(r.createdAt)} WIB</td><td><span className={`badge ${draw?.status === 'confirmed' ? 'badge-yellow' : draw?.status === 'forfeited' ? 'badge-red' : draw ? 'badge-purple' : canDraw ? 'badge-mint' : 'badge-purple'}`}>{draw?.status === 'confirmed' ? 'Pemenang' : draw?.status === 'forfeited' ? 'Gugur' : canDraw ? 'Siap diundi' : 'Tidak ikut undian'}</span></td><td><button className="icon-button" onClick={() => onEdit(r)} aria-label={`Edit ${r.fullName}`}><Icon name="edit" size={17} /></button></td></tr>; })}

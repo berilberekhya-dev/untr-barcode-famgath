@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { AppError, getService } from '@/lib/service';
 import { handle, checkOrigin, registrationUrl } from '@/lib/http';
@@ -12,6 +12,17 @@ export async function GET(request: NextRequest, context: Context) {
     const { action } = await context.params;
     if (action.join('/') === 'session') return { authenticated: await isAdmin() };
     await requireAdmin();
+    if (action.join('/') === 'export/attendance') {
+      const state = await getService().state(registrationUrl(request));
+      const { buildAttendanceReport } = await import('@/lib/attendance-report');
+      const file = await buildAttendanceReport(state);
+      const date = new Date(state.serverTime + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      return new NextResponse(new Uint8Array(file), { headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="Absen-UT-Palembang-${date}.xlsx"`,
+        'Cache-Control': 'private, no-store',
+      } });
+    }
     if (action.join('/') === 'state' || action.join('/') === 'export') return getService().state(registrationUrl(request));
     throw new AppError('Halaman API tidak ditemukan.', 404);
   });

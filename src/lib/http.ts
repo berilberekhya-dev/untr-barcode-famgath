@@ -12,7 +12,10 @@ export function checkOrigin(request: NextRequest) {
   if (!request.headers.get('content-type')?.includes('application/json')) throw new AppError('Gunakan data JSON.', 415);
 }
 export async function handle(fn: () => Promise<unknown>) {
-  try { return NextResponse.json(await fn(), { headers: { 'Cache-Control': 'no-store' } }); }
+  try {
+    const result = await fn();
+    return result instanceof NextResponse ? result : NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } });
+  }
   catch (error) {
     if (error instanceof ZodError) return NextResponse.json({ error: error.issues[0]?.message || 'Periksa kembali data Anda.' }, { status: 400 });
     if (error instanceof AppError) return NextResponse.json({ error: error.message, ...error.details }, { status: error.status });

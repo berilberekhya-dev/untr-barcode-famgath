@@ -133,6 +133,7 @@ test('proyektor menampilkan hadiah per slot, reveal berurutan, dan suara sekali 
 async function login(page:Page){await page.goto('/panitia');await page.getByLabel('Password panitia').fill('e2e-space-password');await page.getByRole('button',{name:'Masuk ke pusat kendali'}).click();await expect(page.getByRole('heading',{name:'Selamat datang, kapten!'})).toBeVisible();}
 test('akses API, whitelist NRP, sumber UTS dan privasi publik',async({request})=>{
  expect((await request.get('/api/admin/state')).status()).toBe(401);
+ expect((await request.get('/api/admin/export/attendance')).status()).toBe(401);
  expect((await request.post('/api/admin/display/audio',{data:{muted:true}})).status()).toBe(401);
   expect((await request.post('/api/admin/display/audio',{data:{volumes:{standby:75,rolling:10,drum:90,brass:100}}})).status()).toBe(401);
  expect((await request.post('/api/registrations/lookup',{data:{nrp:'999999'}})).status()).toBe(404);
@@ -167,6 +168,13 @@ test('catatan kurang, alokasi kupon oleh panitia dan kontrol daftar awal',async(
  await page.getByRole('button',{name:'Atur Penjelajah Uji 60',exact:true}).click();const dialog=page.getByRole('dialog');await dialog.getByLabel('Ikut undian door prize').uncheck();await dialog.getByLabel('Catatan kehadiran').fill('Tidak hadir tanpa keterangan');await dialog.getByRole('button',{name:'Simpan peserta'}).click();
  await expect(dialog).toHaveCount(0);state=await(await page.request.get('/api/admin/state')).json();expect(state.stats.eligible).toBe(59);
  await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:'test-results/roster-admin.png',fullPage:true});
+ await page.getByRole('link',{name:'Peserta',exact:false}).first().click();
+ await page.getByLabel('Cari nama atau NRP').fill('000002');
+ const download=page.waitForEvent('download');
+ await page.getByRole('button',{name:'Ekspor absen Excel'}).click();
+ const file=await download;
+ expect(file.suggestedFilename()).toMatch(/^Absen-UT-Palembang-\d{4}-\d{2}-\d{2}\.xlsx$/);
+ await file.saveAs('test-results/absen-ut-palembang.xlsx');
 });
 test('batch tiga, dua gugur, redraw dua slot saja, hadiah dan PDF',async({page,context})=>{
  test.setTimeout(60000);await login(page);await page.getByRole('link',{name:'Door prize',exact:true}).click();
